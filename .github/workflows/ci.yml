@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  desktop-build:
+    name: Desktop build
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: apps/desktop/package-lock.json
+
+      - name: Install desktop dependencies
+        run: npm ci --prefix apps/desktop
+
+      - name: Build desktop app
+        run: npm run desktop:build
+
+  python-smoke:
+    name: Python smoke checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Compile Vini runtime helpers
+        run: |
+          python -m py_compile runtime/agent-zero/plugins/_vini_app_builder/helpers/builder.py
+          python -m py_compile runtime/agent-zero/plugins/_windows_host_bridge/tools/windows_host_bridge.py
+
+  docker-build-smoke:
+    name: Docker build smoke
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build Vini AI runtime image
+        run: docker build -f runtime/Dockerfile.vini-ai -t vini-ai/agent-runtime:ci runtime

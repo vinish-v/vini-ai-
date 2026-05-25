@@ -536,6 +536,7 @@ class DesktopSessionManager:
         if existing and existing.alive():
             if existing.timezone != target_timezone:
                 return self._restart_system_desktop_for_timezone_locked(existing)
+            self._prepare_desktop_launchers(existing)
             self._prepare_desktop_url_bridge(existing)
             self._refresh_xfce_desktop(existing)
             return existing
@@ -546,6 +547,7 @@ class DesktopSessionManager:
             self._register_virtual_desktop(existing)
             if existing.timezone != target_timezone:
                 return self._restart_system_desktop_for_timezone_locked(existing)
+            self._prepare_desktop_launchers(existing)
             self._prepare_desktop_url_bridge(existing)
             self._refresh_xfce_desktop(existing)
             return existing
@@ -993,9 +995,7 @@ class DesktopSessionManager:
 
         desktop_dir = session.profile_dir / "Desktop"
         desktop_dir.mkdir(parents=True, exist_ok=True)
-        _install_desktop_readme(desktop_dir)
-        _remove_path_if_owned(desktop_dir / "Browser.desktop")
-        _remove_path_if_owned(desktop_dir / "Files.desktop")
+        _remove_generated_desktop_items(desktop_dir)
         config_dir = session.profile_dir / ".config"
         config_dir.mkdir(parents=True, exist_ok=True)
         _remove_path_if_owned(config_dir / "xfce4" / "panel")
@@ -1005,6 +1005,7 @@ class DesktopSessionManager:
         applications_dir.mkdir(parents=True, exist_ok=True)
         cache_dir = session.profile_dir / ".cache"
         cache_dir.mkdir(parents=True, exist_ok=True)
+        wallpaper = _write_vini_os_wallpaper(session.profile_dir)
         (config_dir / "user-dirs.dirs").write_text(
             "\n".join(
                 [
@@ -1031,7 +1032,22 @@ class DesktopSessionManager:
   <property name="backdrop" type="empty">
     <property name="screen0" type="empty">
       <property name="monitor0" type="empty">
-        <property name="image-path" type="string" value="{_xml_attr(str(downloads_home))}"/>
+        <property name="image-path" type="string" value="{_xml_attr(str(wallpaper))}"/>
+        <property name="last-image" type="string" value="{_xml_attr(str(wallpaper))}"/>
+        <property name="image-style" type="int" value="5"/>
+        <property name="workspace0" type="empty">
+          <property name="last-image" type="string" value="{_xml_attr(str(wallpaper))}"/>
+          <property name="image-style" type="int" value="5"/>
+        </property>
+      </property>
+      <property name="monitorscreen" type="empty">
+        <property name="image-path" type="string" value="{_xml_attr(str(wallpaper))}"/>
+        <property name="last-image" type="string" value="{_xml_attr(str(wallpaper))}"/>
+        <property name="image-style" type="int" value="5"/>
+        <property name="workspace0" type="empty">
+          <property name="last-image" type="string" value="{_xml_attr(str(wallpaper))}"/>
+          <property name="image-style" type="int" value="5"/>
+        </property>
       </property>
     </property>
   </property>
@@ -1067,7 +1083,7 @@ class DesktopSessionManager:
         )
         for name, icon, mode, categories in office_launchers:
             _write_desktop_launcher(
-                desktop_dir / f"{name}.desktop",
+                applications_dir / f"{name}.desktop",
                 name=name,
                 exec_line=_desktop_exec(*base_args, mode),
                 icon=icon,
@@ -1078,7 +1094,21 @@ class DesktopSessionManager:
 
         terminal = shutil.which("xfce4-terminal") or "xfce4-terminal"
         settings = shutil.which("xfce4-settings-manager") or "xfce4-settings-manager"
+        thunar = shutil.which("thunar") or "thunar"
         desktop_apps = (
+            {
+                "filename": "Files.desktop",
+                "name": "Files",
+                "exec": _desktop_exec(thunar, workdir_home),
+                "try_exec": thunar,
+                "icon": _desktop_icon(
+                    "/usr/share/icons/elementary-xfce/apps/128/system-file-manager.png",
+                    "/usr/share/icons/hicolor/scalable/apps/org.xfce.filemanager.svg",
+                    "system-file-manager",
+                    "folder",
+                ),
+                "categories": "System;FileManager;",
+            },
             {
                 "filename": "Terminal.desktop",
                 "name": "Terminal",
@@ -1108,16 +1138,29 @@ class DesktopSessionManager:
         )
         for app in desktop_apps:
             _write_desktop_launcher(
-                desktop_dir / str(app["filename"]),
+                applications_dir / str(app["filename"]),
                 name=str(app["name"]),
                 exec_line=str(app["exec"]),
                 icon=str(app["icon"]),
                 categories=str(app["categories"]),
                 try_exec=str(app["try_exec"]),
             )
-        _ensure_desktop_folder_link(desktop_dir, "Workdir", workdir_home)
-        for label, target_parts in DESKTOP_FOLDER_LINKS:
-            _ensure_desktop_folder_link(desktop_dir, label, Path(files.get_abs_path(*target_parts)))
+        _ensure_desktop_folder_link(desktop_dir, "Home", workdir_home)
+        _ensure_desktop_folder_link(desktop_dir, "Projects", Path(files.get_abs_path("usr", "projects")))
+        _ensure_desktop_folder_link(desktop_dir, "Downloads", downloads_home)
+        _write_desktop_launcher(
+            desktop_dir / "Terminal.desktop",
+            name="Terminal",
+            exec_line=_desktop_exec(terminal, f"--working-directory={workdir_home}"),
+            icon=_desktop_icon(
+                "/usr/share/icons/hicolor/128x128/apps/org.xfce.terminal.png",
+                "/usr/share/icons/hicolor/scalable/apps/org.xfce.terminal.svg",
+                "org.xfce.terminal",
+                "utilities-terminal",
+            ),
+            categories="System;TerminalEmulator;",
+            try_exec=terminal,
+        )
 
         self._trust_desktop_launchers(session, desktop_dir)
         self._prepare_xfce_panel_config(session)
@@ -1188,6 +1231,14 @@ class DesktopSessionManager:
             categories="Network;WebBrowser;",
             try_exec=str(browser_bridge),
         )
+        _write_desktop_launcher(
+            data_dir / "applications" / "Browser.desktop",
+            name="Browser",
+            exec_line=_desktop_exec(browser_bridge),
+            icon="web-browser",
+            categories="Network;WebBrowser;",
+            try_exec=str(browser_bridge),
+        )
         self._trust_desktop_launchers(session, desktop_dir)
 
     def _hide_xpra_desktop_entries(self, applications_dir: Path) -> None:
@@ -1208,6 +1259,9 @@ class DesktopSessionManager:
             / "xfce4-panel.xml"
         )
         panel_xml.parent.mkdir(parents=True, exist_ok=True)
+        panel_dir = session.profile_dir / ".config" / "xfce4" / "panel"
+        panel_dir.mkdir(parents=True, exist_ok=True)
+        applications_dir = session.profile_dir / ".local" / "share" / "applications"
 
         root = ET.Element("channel", {"name": "xfce4-panel", "version": "1.0"})
         ET.SubElement(root, "property", {"name": "configver", "type": "int", "value": "2"})
@@ -1216,38 +1270,57 @@ class DesktopSessionManager:
         ET.SubElement(panels, "value", {"type": "int", "value": "1"})
         panel = ET.SubElement(panels, "property", {"name": "panel-1", "type": "empty"})
         for name, prop_type, value in (
-            ("position", "string", "p=6;x=0;y=0"),
-            ("length", "uint", "100"),
+            ("position", "string", "p=10;x=0;y=0"),
+            ("length", "uint", "58"),
             ("position-locked", "bool", "true"),
-            ("size", "uint", "24"),
+            ("size", "uint", "44"),
             ("mode", "uint", "0"),
-            ("autohide-behavior", "uint", "0"),
-            ("disable-struts", "bool", "false"),
+            ("autohide-behavior", "uint", "2"),
+            ("disable-struts", "bool", "true"),
             ("nrows", "uint", "1"),
         ):
             ET.SubElement(panel, "property", {"name": name, "type": prop_type, "value": value})
         plugin_ids = ET.SubElement(panel, "property", {"name": "plugin-ids", "type": "array"})
-        for plugin_id in ("1", "2", "3", "4", "5", "6", "7", "8", "9"):
+        for plugin_id in ("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11"):
             ET.SubElement(plugin_ids, "value", {"type": "int", "value": plugin_id})
 
         plugins = ET.SubElement(root, "property", {"name": "plugins", "type": "empty"})
         ET.SubElement(plugins, "property", {"name": "plugin-1", "type": "string", "value": "applicationsmenu"})
-        ET.SubElement(plugins, "property", {"name": "plugin-2", "type": "string", "value": "tasklist"})
-        tasklist = _xfce_property(plugins, "plugin-2", "string", "tasklist")
+        left_spacer = ET.SubElement(plugins, "property", {"name": "plugin-2", "type": "string", "value": "separator"})
+        ET.SubElement(left_spacer, "property", {"name": "expand", "type": "bool", "value": "true"})
+        ET.SubElement(left_spacer, "property", {"name": "style", "type": "uint", "value": "0"})
+        for plugin_id, desktop_name in (
+            ("3", "Browser.desktop"),
+            ("4", "Terminal.desktop"),
+            ("5", "Files.desktop"),
+            ("6", "LibreOffice Writer.desktop"),
+            ("7", "Settings.desktop"),
+        ):
+            launcher = ET.SubElement(plugins, "property", {"name": f"plugin-{plugin_id}", "type": "string", "value": "launcher"})
+            launcher_items = ET.SubElement(launcher, "property", {"name": "items", "type": "array"})
+            ET.SubElement(launcher_items, "value", {"type": "string", "value": desktop_name})
+            launcher_dir = panel_dir / f"launcher-{plugin_id}"
+            launcher_dir.mkdir(parents=True, exist_ok=True)
+            source = applications_dir / desktop_name
+            if source.is_file():
+                shutil.copyfile(source, launcher_dir / desktop_name)
+
+        tasklist = ET.SubElement(plugins, "property", {"name": "plugin-8", "type": "string", "value": "tasklist"})
         ET.SubElement(tasklist, "property", {"name": "flat-buttons", "type": "bool", "value": "true"})
         ET.SubElement(tasklist, "property", {"name": "show-handle", "type": "bool", "value": "false"})
-        ET.SubElement(tasklist, "property", {"name": "show-labels", "type": "bool", "value": "true"})
-        separator = ET.SubElement(plugins, "property", {"name": "plugin-3", "type": "string", "value": "separator"})
+        ET.SubElement(tasklist, "property", {"name": "show-labels", "type": "bool", "value": "false"})
+        separator = ET.SubElement(plugins, "property", {"name": "plugin-9", "type": "string", "value": "separator"})
         ET.SubElement(separator, "property", {"name": "expand", "type": "bool", "value": "true"})
         ET.SubElement(separator, "property", {"name": "style", "type": "uint", "value": "0"})
-        ET.SubElement(plugins, "property", {"name": "plugin-4", "type": "string", "value": "pager"})
-        ET.SubElement(plugins, "property", {"name": "plugin-5", "type": "string", "value": "systray"})
-        ET.SubElement(plugins, "property", {"name": "plugin-6", "type": "string", "value": "separator"})
-        ET.SubElement(plugins, "property", {"name": "plugin-7", "type": "string", "value": "clock"})
-        ET.SubElement(plugins, "property", {"name": "plugin-8", "type": "string", "value": "separator"})
-        shutdown = ET.SubElement(plugins, "property", {"name": "plugin-9", "type": "string", "value": "launcher"})
+        ET.SubElement(plugins, "property", {"name": "plugin-10", "type": "string", "value": "systray"})
+        shutdown = ET.SubElement(plugins, "property", {"name": "plugin-11", "type": "string", "value": "launcher"})
         shutdown_items = ET.SubElement(shutdown, "property", {"name": "items", "type": "array"})
         ET.SubElement(shutdown_items, "value", {"type": "string", "value": SHUTDOWN_PANEL_LAUNCHER_ID})
+        shutdown_dir = panel_dir / "launcher-11"
+        shutdown_dir.mkdir(parents=True, exist_ok=True)
+        shutdown_source = panel_dir / "launcher-9" / SHUTDOWN_PANEL_LAUNCHER_ID
+        if shutdown_source.is_file():
+            shutil.copyfile(shutdown_source, shutdown_dir / SHUTDOWN_PANEL_LAUNCHER_ID)
 
         tree = ET.ElementTree(root)
         try:
@@ -1276,6 +1349,16 @@ if command -v xfconf-query >/dev/null 2>&1; then
   xfconf-query -c xfce4-desktop -p /desktop-icons/file-icons/show-filesystem -n -t bool -s false >/dev/null 2>&1 || true
   xfconf-query -c xfce4-desktop -p /desktop-icons/file-icons/show-removable -n -t bool -s false >/dev/null 2>&1 || true
   xfconf-query -c xfce4-desktop -p /desktop-icons/file-icons/show-trash -n -t bool -s false >/dev/null 2>&1 || true
+  xfconf-query -c xfce4-panel -p /panels/panel-1/autohide-behavior -n -t uint -s 2 >/dev/null 2>&1 || true
+  wallpaper="$HOME/.local/share/backgrounds/vini-os-clean.png"
+  [ -f "$wallpaper" ] || wallpaper="$HOME/.local/share/backgrounds/vini-os-clean.svg"
+  for monitor in monitor0 monitorscreen; do
+    xfconf-query -c xfce4-desktop -p "/backdrop/screen0/$monitor/image-path" -n -t string -s "$wallpaper" >/dev/null 2>&1 || true
+    xfconf-query -c xfce4-desktop -p "/backdrop/screen0/$monitor/last-image" -n -t string -s "$wallpaper" >/dev/null 2>&1 || true
+    xfconf-query -c xfce4-desktop -p "/backdrop/screen0/$monitor/image-style" -n -t int -s 5 >/dev/null 2>&1 || true
+    xfconf-query -c xfce4-desktop -p "/backdrop/screen0/$monitor/workspace0/last-image" -n -t string -s "$wallpaper" >/dev/null 2>&1 || true
+    xfconf-query -c xfce4-desktop -p "/backdrop/screen0/$monitor/workspace0/image-style" -n -t int -s 5 >/dev/null 2>&1 || true
+  done
 fi
 for launcher in "$HOME"/Desktop/*.desktop; do
   [ -f "$launcher" ] || continue
@@ -1350,7 +1433,7 @@ fi
         if not xsetroot:
             return
         subprocess.run(
-            [xsetroot, "-solid", "#20242a"],
+            [xsetroot, "-solid", "#05070d"],
             check=False,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
@@ -1405,20 +1488,24 @@ fi
 
     def _refresh_xfce_desktop(self, session: DesktopSession) -> None:
         xfdesktop = shutil.which("xfdesktop")
-        if not xfdesktop:
-            return
         env = self._xfce_process_env(session, "xfdesktop")
-        try:
-            subprocess.run(
-                [xfdesktop, "--reload"],
-                check=False,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                timeout=4,
-                env=env,
-            )
-        except (OSError, subprocess.TimeoutExpired):
-            return
+        for command in (
+            ([xfdesktop, "--reload"] if xfdesktop else None),
+            ([shutil.which("xfce4-panel") or "xfce4-panel", "--restart"]),
+        ):
+            if not command or not command[0]:
+                continue
+            try:
+                subprocess.run(
+                    command,
+                    check=False,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    timeout=4,
+                    env=env,
+                )
+            except (OSError, subprocess.TimeoutExpired):
+                continue
 
     def _trust_desktop_launchers(self, session: DesktopSession, desktop_dir: Path) -> None:
         gio = shutil.which("gio")
@@ -2294,6 +2381,128 @@ def _write_hidden_application_entry(path: Path, name: str) -> None:
         ),
         encoding="utf-8",
     )
+
+
+def _remove_generated_desktop_items(desktop_dir: Path) -> None:
+    for name in (
+        "README.md",
+        "Browser.desktop",
+        "Files.desktop",
+        "LibreOffice Writer.desktop",
+        "LibreOffice Calc.desktop",
+        "LibreOffice Impress.desktop",
+        "Terminal.desktop",
+        "Settings.desktop",
+        "Workdir",
+        "Projects",
+        "Skills",
+        "Agents",
+        "Downloads",
+        "Home",
+    ):
+        _remove_path_if_owned(desktop_dir / name)
+
+
+def _write_vini_os_wallpaper(profile_dir: Path) -> Path:
+    wallpaper_dir = profile_dir / ".local" / "share" / "backgrounds"
+    wallpaper_dir.mkdir(parents=True, exist_ok=True)
+    wallpaper = wallpaper_dir / "vini-os-clean.svg"
+    wallpaper.write_text(
+        """<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="900" viewBox="0 0 1440 900">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#111722"/>
+      <stop offset=".62" stop-color="#05070d"/>
+      <stop offset="1" stop-color="#020307"/>
+    </linearGradient>
+    <radialGradient id="glow" cx=".58" cy=".62" r=".42">
+      <stop offset="0" stop-color="#274063" stop-opacity=".62"/>
+      <stop offset="1" stop-color="#274063" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="wave" cx=".35" cy=".58" r=".66">
+      <stop offset="0" stop-color="#ff7aa8"/>
+      <stop offset=".38" stop-color="#6ee7ff"/>
+      <stop offset=".72" stop-color="#6f9fd1"/>
+      <stop offset="1" stop-color="#172131"/>
+    </radialGradient>
+    <filter id="soft" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="44" stdDeviation="34" flood-color="#000000" flood-opacity=".54"/>
+    </filter>
+  </defs>
+  <rect width="1440" height="900" fill="url(#bg)"/>
+  <rect width="1440" height="900" fill="url(#glow)"/>
+  <g fill="#ffffff" opacity=".62">
+    <circle cx="156" cy="118" r="1.6"/><circle cx="246" cy="164" r="2.5"/><circle cx="446" cy="162" r="1.2"/>
+    <circle cx="818" cy="307" r="2.5"/><circle cx="984" cy="226" r="2.4"/><circle cx="936" cy="182" r="1.4"/>
+    <circle cx="1098" cy="328" r="1.7"/><circle cx="1324" cy="82" r="1.2"/><circle cx="1026" cy="294" r="1.0"/>
+    <circle cx="690" cy="262" r="1.4"/><circle cx="854" cy="274" r="1.7"/><circle cx="316" cy="306" r="1.3"/>
+  </g>
+  <line x1="0" y1="546" x2="1440" y2="546" stroke="#b6d5ef" stroke-opacity=".14"/>
+  <path filter="url(#soft)" fill="url(#wave)" opacity=".78"
+    d="M572 496 C625 386 668 326 788 326 C742 360 714 392 716 425 C718 464 759 484 816 469 C760 516 683 543 615 520 C594 513 578 505 572 496 Z"/>
+  <circle cx="640" cy="456" r="42" fill="#ff7aa8" opacity=".50"/>
+  <circle cx="704" cy="418" r="50" fill="#6ee7ff" opacity=".34"/>
+</svg>
+""",
+        encoding="utf-8",
+    )
+    png_wallpaper = wallpaper_dir / "vini-os-clean.png"
+    try:
+        from PIL import Image, ImageDraw, ImageFilter
+
+        width, height = 1440, 900
+        image = Image.new("RGB", (width, height), "#05070d")
+        pixels = image.load()
+        for y in range(height):
+            t = y / max(1, height - 1)
+            r = int(17 * (1 - t) + 2 * t)
+            g = int(23 * (1 - t) + 3 * t)
+            b = int(34 * (1 - t) + 7 * t)
+            for x in range(width):
+                glow = max(0.0, 1.0 - (((x - 870) / 650) ** 2 + ((y - 610) / 380) ** 2))
+                pixels[x, y] = (
+                    min(255, r + int(36 * glow)),
+                    min(255, g + int(54 * glow)),
+                    min(255, b + int(82 * glow)),
+                )
+
+        stars = ImageDraw.Draw(image)
+        for x, y, radius, alpha in (
+            (126, 116, 2, 220),
+            (248, 178, 1, 170),
+            (438, 92, 1, 150),
+            (702, 164, 2, 130),
+            (1054, 126, 1, 150),
+            (1210, 244, 1, 130),
+        ):
+            color = (alpha, alpha, alpha)
+            stars.ellipse((x - radius, y - radius, x + radius, y + radius), fill=color)
+
+        wave_layer = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+        wave = ImageDraw.Draw(wave_layer)
+        wave_points = [
+            (460, 650),
+            (535, 525),
+            (665, 430),
+            (815, 405),
+            (1010, 438),
+            (900, 490),
+            (846, 570),
+            (900, 642),
+            (1040, 682),
+            (862, 762),
+            (646, 744),
+        ]
+        wave.polygon(wave_points, fill=(112, 159, 209, 190))
+        wave.ellipse((540, 500, 790, 690), fill=(255, 122, 168, 118))
+        wave.ellipse((650, 430, 920, 620), fill=(110, 231, 255, 95))
+        wave_layer = wave_layer.filter(ImageFilter.GaussianBlur(radius=2))
+        image = Image.alpha_composite(image.convert("RGBA"), wave_layer).convert("RGB")
+        image.save(png_wallpaper, format="PNG", optimize=True)
+        return png_wallpaper
+    except Exception:
+        return wallpaper
+    return wallpaper
 
 
 def _write_thunar_defaults(path: Path) -> None:

@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import subprocess
+from pathlib import Path
+
 from helpers.api import ApiHandler, Request
 from plugins._desktop.helpers import desktop_session
 from plugins._office.helpers import document_store
@@ -22,6 +25,8 @@ class DesktopSession(ApiHandler):
             return self._sync(input)
         if action in {"state", "desktop_state"}:
             return self._state(input)
+        if action in {"launch_app", "desktop_launch_app"}:
+            return self._launch_app(input)
         if action in {"shutdown", "desktop_shutdown"}:
             return self._shutdown(input)
         return {"ok": False, "error": f"Unsupported desktop session action: {action}"}
@@ -135,6 +140,55 @@ class DesktopSession(ApiHandler):
             include_screenshot=bool(input.get("include_screenshot") is True),
             context_id=str(input.get("ctxid") or input.get("context_id") or ""),
         )
+
+    def _launch_app(self, input: dict) -> dict:
+        app = str(input.get("app") or "").strip().lower()
+        allowed = {
+            "writer",
+            "calc",
+            "spreadsheet",
+            "impress",
+            "presentation",
+            "terminal",
+            "settings",
+            "workdir",
+            "files",
+            "file-manager",
+        }
+        aliases = {
+            "spreadsheet": "calc",
+            "presentation": "impress",
+            "files": "workdir",
+        }
+        if app not in allowed:
+            return {"ok": False, "error": f"Unsupported Desktop app: {app or '<empty>'}"}
+        desktop = desktop_session.get_manager().ensure_system_desktop()
+        if not desktop.get("available"):
+            return {
+                "ok": False,
+                "error": desktop.get("error") or "Desktop session is unavailable.",
+                "desktop": desktop,
+                "libreoffice": libreoffice.collect_status(),
+            }
+        script = Path(__file__).resolve().parents[1] / "skills" / "linux-desktop" / "scripts" / "desktopctl.sh"
+        if not script.is_file():
+            return {"ok": False, "error": f"Desktop launcher script is missing: {script}"}
+        target = aliases.get(app, app)
+        result = subprocess.run(
+            [str(script), "launch", target],
+            cwd="/a0",
+            text=True,
+            capture_output=True,
+            timeout=15,
+        )
+        return {
+            "ok": result.returncode == 0,
+            "app": target,
+            "code": result.returncode,
+            "stdout": result.stdout[-4000:],
+            "stderr": result.stderr[-4000:],
+            "desktop": desktop,
+        }
 
     def _shutdown(self, input: dict) -> dict:
         return desktop_session.get_manager().shutdown_system_desktop(

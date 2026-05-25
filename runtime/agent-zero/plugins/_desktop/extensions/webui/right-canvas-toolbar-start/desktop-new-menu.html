@@ -34,5 +34,17 @@
       <span class="material-symbols-outlined" aria-hidden="true">co_present</span>
       <span>Presentation</span>
     </button>
+    <button type="button" class="office-new-menu-item" role="menuitem" @click="open = false; $store.desktop?.runNewMenuAction('terminal')">
+      <span class="material-symbols-outlined" aria-hidden="true">terminal</span>
+      <span>Terminal</span>
+    </button>
+    <button type="button" class="office-new-menu-item" role="menuitem" @click="open = false; $store.desktop?.runNewMenuAction('workdir')">
+      <span class="material-symbols-outlined" aria-hidden="true">folder</span>
+      <span>Files</span>
+    </button>
+    <button type="button" class="office-new-menu-item" role="menuitem" @click="open = false; $store.desktop?.runNewMenuAction('settings')">
+      <span class="material-symbols-outlined" aria-hidden="true">settings</span>
+      <span>Settings</span>
+    </button>
   </div>
 </div>

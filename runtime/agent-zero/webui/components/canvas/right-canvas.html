@@ -14,7 +14,12 @@
           'is-open': $store.rightCanvas.isOpen,
           'is-closed': !$store.rightCanvas.isOpen,
           'is-overlay': $store.rightCanvas.isOverlayMode,
-          'is-mobile': $store.rightCanvas.isMobileMode
+          'is-mobile': $store.rightCanvas.isMobileMode,
+          'is-os-mode': true,
+          'has-os-browser': $store.rightCanvas.isOsAppOpen('browser'),
+          'has-os-editor': $store.rightCanvas.isOsAppOpen('editor'),
+          'is-os-browser-active': $store.rightCanvas.isOsAppActive('browser'),
+          'is-os-editor-active': $store.rightCanvas.isOsAppActive('editor')
         }"
         :style="$store.rightCanvas.widthStyle()"
         x-show="$store.rightCanvas.shouldRender()"
@@ -41,47 +46,13 @@
         <section class="right-canvas-shell">
           <x-extension id="right-canvas-shell-start"></x-extension>
 
-          <header class="right-canvas-header">
-            <div class="right-canvas-title-block">
-              <strong>Vini AI Computer</strong>
-              <span>
-                <span class="material-symbols-outlined" aria-hidden="true">terminal</span>
-                Vini AI is using Computer
-              </span>
-            </div>
-
-            <div class="right-canvas-tabs" role="tablist" aria-label="Vini AI Computer tabs">
-              <x-extension id="right-canvas-tabs-start"></x-extension>
-              <template x-for="surface in $store.rightCanvas.panelSurfaces" :key="surface.id">
-                <button
-                  type="button"
-                  class="right-canvas-tab"
-                  role="tab"
-                  :aria-selected="$store.rightCanvas.isSurfaceActive(surface.id).toString()"
-                  :title="surface.title"
-                  :class="{ 'is-active': $store.rightCanvas.isSurfaceActive(surface.id) }"
-                  @click="$store.rightCanvas.open(surface.id)"
-                >
-                  <template x-if="surface.image">
-                    <img class="right-canvas-surface-image" :src="surface.image" alt="" aria-hidden="true">
-                  </template>
-                  <template x-if="!surface.image">
-                    <span class="material-symbols-outlined" aria-hidden="true" x-text="surface.icon"></span>
-                  </template>
-                  <span class="right-canvas-tab-label" x-text="surface.title"></span>
-                </button>
-              </template>
-              <x-extension id="right-canvas-tabs-end"></x-extension>
-            </div>
-
-            <div class="right-canvas-toolbar" aria-label="Vini AI Computer toolbar">
-              <x-extension id="right-canvas-toolbar-start"></x-extension>
-              <span class="right-canvas-takeover-label">Take over</span>
+          <main class="right-canvas-panels">
+            <div class="right-canvas-os-controls" aria-label="Vini OS controls">
               <button
                 type="button"
                 class="right-canvas-icon-button"
-                title="Open as window"
-                aria-label="Open as window"
+                title="Open current app as window"
+                aria-label="Open current app as window"
                 x-show="$store.rightCanvas.currentSurfaceCanUndock()"
                 @click="$store.rightCanvas.undockActiveSurface()"
               >
@@ -90,17 +61,33 @@
               <button
                 type="button"
                 class="right-canvas-icon-button right-canvas-close-button"
-                title="Close Vini AI Computer"
-                aria-label="Close Vini AI Computer"
+                title="Close Vini Computer"
+                aria-label="Close Vini Computer"
                 @click="$store.rightCanvas.close()"
               >
                 <span class="material-symbols-outlined">close</span>
               </button>
-              <x-extension id="right-canvas-toolbar-end"></x-extension>
             </div>
-          </header>
-
-          <main class="right-canvas-panels">
+            <button
+              type="button"
+              class="vini-os-window-close vini-os-browser-close"
+              title="Close Browser"
+              aria-label="Close Browser"
+              x-show="$store.rightCanvas.isOsAppOpen('browser')"
+              @click="$store.rightCanvas.closeOsApp('browser')"
+            >
+              <span class="material-symbols-outlined">close</span>
+            </button>
+            <button
+              type="button"
+              class="vini-os-window-close vini-os-editor-close"
+              title="Close Editor"
+              aria-label="Close Editor"
+              x-show="$store.rightCanvas.isOsAppOpen('editor')"
+              @click="$store.rightCanvas.closeOsApp('editor')"
+            >
+              <span class="material-symbols-outlined">close</span>
+            </button>
             <x-extension id="right-canvas-panels"></x-extension>
             <template x-if="$store.rightCanvas.panelSurfaces.length === 0">
               <div class="right-canvas-empty-state">

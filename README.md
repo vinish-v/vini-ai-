@@ -1,8 +1,17 @@
 # Vini AI
 
+[![Windows](https://img.shields.io/badge/platform-Windows-0078D4?style=for-the-badge&logo=windows&logoColor=white)](#quick-start)
+[![Docker](https://img.shields.io/badge/runtime-Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white)](runtime/Dockerfile.vini-ai)
+[![Electron](https://img.shields.io/badge/desktop-Electron-47848F?style=for-the-badge&logo=electron&logoColor=white)](apps/desktop)
+[![Python](https://img.shields.io/badge/runtime-Python-3776AB?style=for-the-badge&logo=python&logoColor=white)](runtime/agent-zero)
+[![TypeScript](https://img.shields.io/badge/shell-TypeScript-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](apps/desktop)
+[![CI](https://img.shields.io/github/actions/workflow/status/vinish-v/vini-ai-/ci.yml?branch=main&style=for-the-badge&label=CI)](.github/workflows/ci.yml)
+
 Vini AI is a Windows desktop AI agent workspace built around a real local runtime. It rebrands and extends the Agent Zero runtime into a Vini AI product experience with a desktop shell, live browser/desktop surfaces, provider configuration, local data persistence, connectors, voice work, and a scoped Windows host bridge.
 
 The goal is simple: keep the agent runtime real, observable, and useful. No fake readiness states, no mock dashboards, and no hardcoded provider success.
+
+> Screenshots and demo GIFs will live in `docs/assets/`. Add the latest product captures there when the UI stabilizes.
 
 ## What Vini AI Is
 
@@ -49,6 +58,18 @@ Vini AI keeps a clear boundary between product code and runtime code:
 - `docs` contains setup, architecture, verification, attribution, and host bridge notes.
 
 See [docs/architecture.md](docs/architecture.md) for the deeper system contract.
+
+## Product Preview
+
+Add these assets when ready:
+
+| Surface | Asset path |
+| --- | --- |
+| Main workspace | `docs/assets/vini-ai-workspace.png` |
+| Vini AI Computer | `docs/assets/vini-ai-computer.png` |
+| Browser task | `docs/assets/vini-ai-browser.gif` |
+| Connectors | `docs/assets/vini-ai-connectors.png` |
+| Voice mode | `docs/assets/vini-ai-voice.gif` |
 
 ## Repository Layout
 
@@ -176,6 +197,18 @@ Use the verification checklist before treating a change as ready:
 - Windows installer builds before release.
 
 See [docs/verification.md](docs/verification.md).
+
+## More Docs
+
+- [Roadmap](ROADMAP.md)
+- [Contributing](CONTRIBUTING.md)
+- [Security](SECURITY.md)
+- [Changelog](CHANGELOG.md)
+- [Pitch](docs/pitch.md)
+- [Technical report](docs/technical-report.md)
+- [Manus parity gaps](docs/manus-parity-gaps.md)
+- [Release checklist](docs/release-checklist.md)
+- [Architecture diagrams](docs/diagrams.md)
 
 ## Roadmap
 

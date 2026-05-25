@@ -1319,8 +1319,61 @@ const model = {
     if (event?.target?.getAttribute?.("src") === "about:blank") return;
     if (!this.isDesktopHostVisible()) return;
     this.error = "";
+    this.skinXpraDesktopFrame(event?.target || null);
     this.queueDesktopFrameFocus(event?.target || null);
     this.requestDesktopViewportSync({ force: true, frame: event?.target || null });
+  },
+
+  skinXpraDesktopFrame(frame = null) {
+    const target = this.desktopFrame(frame);
+    if (!target?.contentDocument) return false;
+    const inject = () => {
+      try {
+        const doc = target.contentDocument;
+        if (!doc?.head || doc.getElementById("vini-xpra-desktop-skin")) return true;
+        const style = doc.createElement("style");
+        style.id = "vini-xpra-desktop-skin";
+        style.textContent = `
+          body.desktop {
+            overflow: hidden !important;
+            background: #020307 !important;
+          }
+          body.desktop #screen {
+            position: fixed !important;
+            inset: 0 !important;
+            overflow: hidden !important;
+            background: #020307 !important;
+          }
+          body.desktop .window.desktop {
+            left: 0 !important;
+            top: 0 !important;
+            width: 100vw !important;
+            height: 100vh !important;
+            border: 0 !important;
+            box-shadow: none !important;
+            transform: none !important;
+          }
+          body.desktop .window.desktop .windowhead {
+            display: none !important;
+          }
+          body.desktop .window.desktop canvas {
+            position: absolute !important;
+            left: 0 !important;
+            top: 0 !important;
+            width: 100% !important;
+            height: 100% !important;
+          }
+        `;
+        doc.head.appendChild(style);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+    for (const delay of [0, 300, 1000, 2500]) {
+      globalThis.setTimeout(inject, delay);
+    }
+    return inject();
   },
 
   queueDesktopFrameFocus(frame = null) {
@@ -2331,7 +2384,31 @@ const model = {
     if (normalized === "writer") return await this.create("document", "odt");
     if (normalized === "spreadsheet") return await this.create("spreadsheet", "ods");
     if (normalized === "presentation") return await this.create("presentation", "odp");
+    if (["terminal", "settings", "workdir", "files", "file-manager"].includes(normalized)) {
+      return await this.launchDesktopApp(normalized);
+    }
     return null;
+  },
+
+  async launchDesktopApp(app = "") {
+    const target = String(app || "").trim().toLowerCase();
+    if (!target) return null;
+    this.error = "";
+    this.message = `Opening ${target}`;
+    try {
+      const result = await callDesktop("launch_app", { app: target });
+      if (!result?.ok) {
+        throw new Error(result?.stderr || result?.error || `Could not open ${target}`);
+      }
+      this.message = `Opened ${target}`;
+      globalThis.setTimeout(() => {
+        if (this.message === `Opened ${target}`) this.message = "";
+      }, SAVE_MESSAGE_MS);
+      return result;
+    } catch (error) {
+      this.error = error?.message || String(error);
+      return { ok: false, error: this.error };
+    }
   },
 
   installHeaderNewMenu(header = null) {
@@ -2361,6 +2438,18 @@ const model = {
         <button type="button" class="office-new-menu-item" role="menuitem" data-office-new-action="presentation">
           <span class="material-symbols-outlined" aria-hidden="true">co_present</span>
           <span>Presentation</span>
+        </button>
+        <button type="button" class="office-new-menu-item" role="menuitem" data-office-new-action="terminal">
+          <span class="material-symbols-outlined" aria-hidden="true">terminal</span>
+          <span>Terminal</span>
+        </button>
+        <button type="button" class="office-new-menu-item" role="menuitem" data-office-new-action="workdir">
+          <span class="material-symbols-outlined" aria-hidden="true">folder</span>
+          <span>Files</span>
+        </button>
+        <button type="button" class="office-new-menu-item" role="menuitem" data-office-new-action="settings">
+          <span class="material-symbols-outlined" aria-hidden="true">settings</span>
+          <span>Settings</span>
         </button>
       </div>
     `;

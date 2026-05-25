@@ -1,0 +1,46 @@
+name: Feature request
+description: Suggest a Vini AI improvement
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What user problem should this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What should Vini AI do?
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Desktop shell
+        - Runtime
+        - Vini AI Computer
+        - Browser
+        - Desktop surface
+        - Connectors
+        - Voice
+        - Host bridge
+        - Packaging
+        - Documentation
+    validations:
+      required: true
+  - type: textarea
+    id: real_state
+    attributes:
+      label: Real-state requirement
+      description: What real system state should this feature verify or expose?
+      placeholder: Example: Docker status, provider credential presence, OAuth session, browser page URL, host bridge approval.
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered

@@ -40,6 +40,8 @@ const model = {
   width: DEFAULT_WIDTH,
   isOverlayMode: false,
   isMobileMode: false,
+  osAppWindows: {},
+  osActiveAppId: "",
   _initialized: false,
   _registering: false,
   _rootElement: null,
@@ -111,16 +113,19 @@ const model = {
       this.activeSurfaceId = "";
       return;
     }
-    if (!panelSurfaces.some((surface) => surface.id === this.activeSurfaceId)) {
-      this.activeSurfaceId = panelSurfaces[0].id;
+    if (this.isComputerAppSurface(this.activeSurfaceId) || !panelSurfaces.some((surface) => surface.id === this.activeSurfaceId)) {
+      this.activeSurfaceId = this.defaultSurfaceId();
     }
   },
 
   async open(surfaceId = "", payload = {}) {
-    const targetId = normalizeSurfaceId(surfaceId || this.activeSurfaceId || this.panelSurfaces[0]?.id || "");
+    const targetId = normalizeSurfaceId(surfaceId || this.activeSurfaceId || this.defaultSurfaceId() || "");
     const surface = this.getSurface(targetId);
     if (!surface) {
       return false;
+    }
+    if (this.isComputerAppSurface(targetId)) {
+      return await this.openOsApp(targetId, payload);
     }
     if (this.isMobileMode && !surface.actionOnly) {
       return false;
@@ -152,6 +157,82 @@ const model = {
     } catch (error) {
       console.error(`Vini AI Computer surface ${targetId} failed to open`, error);
     }
+    return true;
+  },
+
+  defaultSurfaceId() {
+    return this.panelSurfaces.find((surface) => surface.id === "desktop")?.id
+      || this.panelSurfaces[0]?.id
+      || "";
+  },
+
+  isComputerAppSurface(surfaceId = "") {
+    return ["browser", "editor"].includes(normalizeSurfaceId(surfaceId));
+  },
+
+  isOsAppOpen(surfaceId = "") {
+    return Boolean(this.osAppWindows[normalizeSurfaceId(surfaceId)]);
+  },
+
+  isOsAppActive(surfaceId = "") {
+    const targetId = normalizeSurfaceId(surfaceId);
+    return Boolean(targetId && this.osActiveAppId === targetId && this.isOsAppOpen(targetId));
+  },
+
+  async openOsApp(surfaceId = "", payload = {}) {
+    const targetId = normalizeSurfaceId(surfaceId);
+    const appSurface = this.getSurface(targetId);
+    const desktopSurface = this.getSurface("desktop");
+    if (!appSurface || !desktopSurface) return false;
+
+    this.isOpen = true;
+    this.activeSurfaceId = "desktop";
+    this.markSurfaceMounted("desktop");
+    this.markSurfaceMounted(targetId);
+    this.osAppWindows = {
+      ...this.osAppWindows,
+      [targetId]: true,
+    };
+    this.osActiveAppId = targetId;
+    this.recordSurfaceMode("desktop", SURFACE_MODE_DOCKED, { persist: false });
+    this.recordSurfaceMode(targetId, SURFACE_MODE_DOCKED, { persist: false });
+    this._lastPayloadBySurface.desktop = this._lastPayloadBySurface.desktop || { source: "vini-os" };
+    this._lastPayloadBySurface[targetId] = payload || {};
+    this.persist();
+    this.applyLayoutState();
+
+    try {
+      await desktopSurface.open?.({ source: payload?.source || "vini-os" });
+    } catch (error) {
+      console.error("Vini OS desktop failed to open", error);
+    }
+    try {
+      await appSurface.open?.(payload || {});
+    } catch (error) {
+      console.error(`Vini OS app ${targetId} failed to open`, error);
+    }
+    return true;
+  },
+
+  async closeOsApp(surfaceId = "") {
+    const targetId = normalizeSurfaceId(surfaceId);
+    if (!this.isComputerAppSurface(targetId)) return false;
+    const surface = this.getSurface(targetId);
+    try {
+      await surface?.close?.({ source: "vini-os" });
+    } catch (error) {
+      console.error(`Vini OS app ${targetId} failed to close`, error);
+    }
+    const nextWindows = { ...this.osAppWindows };
+    delete nextWindows[targetId];
+    this.osAppWindows = nextWindows;
+    this.markSurfaceUnmounted(targetId);
+    if (this.osActiveAppId === targetId) {
+      this.osActiveAppId = Object.keys(this.osAppWindows).find((id) => this.osAppWindows[id]) || "";
+    }
+    this.activeSurfaceId = "desktop";
+    this.persist();
+    this.applyLayoutState();
     return true;
   },
 
@@ -207,7 +288,7 @@ const model = {
   },
 
   async openLatest(surfaceId = "", payload = {}) {
-    const targetId = normalizeSurfaceId(surfaceId || this.activeSurfaceId || this.panelSurfaces[0]?.id || "");
+    const targetId = normalizeSurfaceId(surfaceId || this.activeSurfaceId || this.defaultSurfaceId() || "");
     if (!targetId) return false;
     if (this.latestSurfaceMode(targetId) === SURFACE_MODE_FLOATING) {
       return await this.openModalSurface(targetId, payload);
@@ -344,7 +425,7 @@ const model = {
       await this.close();
       return false;
     }
-    return await this.open(this.activeSurfaceId || this.panelSurfaces[0]?.id || "");
+    return await this.open(this.activeSurfaceId || this.defaultSurfaceId() || "");
   },
 
   setWidth(px, options = {}) {
@@ -432,6 +513,7 @@ const model = {
       const saved = migratePersistedSurfaceState(JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}"));
       this.isOpen = false;
       this.activeSurfaceId = String(saved.activeSurfaceId || "");
+      if (this.isComputerAppSurface(this.activeSurfaceId)) this.activeSurfaceId = "desktop";
       this.surfaceModes = Object.fromEntries(
         Object.entries(saved.surfaceModes || {}).map(([surfaceId, mode]) => [
           surfaceId,
