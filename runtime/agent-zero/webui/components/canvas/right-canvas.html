@@ -18,8 +18,10 @@
           'is-os-mode': true,
           'has-os-browser': $store.rightCanvas.isOsAppOpen('browser'),
           'has-os-editor': $store.rightCanvas.isOsAppOpen('editor'),
+          'has-os-build': $store.rightCanvas.isOsAppOpen('build'),
           'is-os-browser-active': $store.rightCanvas.isOsAppActive('browser'),
-          'is-os-editor-active': $store.rightCanvas.isOsAppActive('editor')
+          'is-os-editor-active': $store.rightCanvas.isOsAppActive('editor'),
+          'is-os-build-active': $store.rightCanvas.isOsAppActive('build')
         }"
         :style="$store.rightCanvas.widthStyle()"
         x-show="$store.rightCanvas.shouldRender()"
@@ -33,10 +35,8 @@
           <button
             type="button"
             class="right-canvas-rail-button right-canvas-toggle-button"
-            :class="{ 'is-active': $store.rightCanvas.isOpen }"
-            :title="$store.rightCanvas.isOpen ? 'Hide Vini AI Computer' : 'Show Vini AI Computer'"
-            :aria-label="$store.rightCanvas.isOpen ? 'Hide Vini AI Computer' : 'Show Vini AI Computer'"
-            :aria-pressed="$store.rightCanvas.isOpen.toString()"
+            title="Show Vini AI Computer"
+            aria-label="Show Vini AI Computer"
             @click="$store.rightCanvas.toggleCanvas()"
           >
             <span class="material-symbols-outlined">dock_to_right</span>
@@ -61,11 +61,11 @@
               <button
                 type="button"
                 class="right-canvas-icon-button right-canvas-close-button"
-                title="Close Vini Computer"
-                aria-label="Close Vini Computer"
+                title="Hide Vini Computer"
+                aria-label="Hide Vini Computer"
                 @click="$store.rightCanvas.close()"
               >
-                <span class="material-symbols-outlined">close</span>
+                <span class="material-symbols-outlined">dock_to_right</span>
               </button>
             </div>
             <button
@@ -85,6 +85,16 @@
               aria-label="Close Editor"
               x-show="$store.rightCanvas.isOsAppOpen('editor')"
               @click="$store.rightCanvas.closeOsApp('editor')"
+            >
+              <span class="material-symbols-outlined">close</span>
+            </button>
+            <button
+              type="button"
+              class="vini-os-window-close vini-os-build-close"
+              title="Close Build"
+              aria-label="Close Build"
+              x-show="$store.rightCanvas.isOsAppOpen('build')"
+              @click="$store.rightCanvas.closeOsApp('build')"
             >
               <span class="material-symbols-outlined">close</span>
             </button>

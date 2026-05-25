@@ -44,6 +44,7 @@
       "main": "dist/main/index.js"
     },
     "win": {
+      "icon": "build/icon.ico",
       "signAndEditExecutable": false,
       "target": [
         "nsis"

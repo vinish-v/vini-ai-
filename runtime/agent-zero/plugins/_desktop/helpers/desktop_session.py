@@ -1350,7 +1350,8 @@ if command -v xfconf-query >/dev/null 2>&1; then
   xfconf-query -c xfce4-desktop -p /desktop-icons/file-icons/show-removable -n -t bool -s false >/dev/null 2>&1 || true
   xfconf-query -c xfce4-desktop -p /desktop-icons/file-icons/show-trash -n -t bool -s false >/dev/null 2>&1 || true
   xfconf-query -c xfce4-panel -p /panels/panel-1/autohide-behavior -n -t uint -s 2 >/dev/null 2>&1 || true
-  wallpaper="$HOME/.local/share/backgrounds/vini-os-clean.png"
+  wallpaper="$HOME/.local/share/backgrounds/vini-os-mountain.jpg"
+  [ -f "$wallpaper" ] || wallpaper="$HOME/.local/share/backgrounds/vini-os-clean.png"
   [ -f "$wallpaper" ] || wallpaper="$HOME/.local/share/backgrounds/vini-os-clean.svg"
   for monitor in monitor0 monitorscreen; do
     xfconf-query -c xfce4-desktop -p "/backdrop/screen0/$monitor/image-path" -n -t string -s "$wallpaper" >/dev/null 2>&1 || true
@@ -2409,6 +2410,12 @@ def _remove_generated_desktop_items(desktop_dir: Path) -> None:
 def _write_vini_os_wallpaper(profile_dir: Path) -> Path:
     wallpaper_dir = profile_dir / ".local" / "share" / "backgrounds"
     wallpaper_dir.mkdir(parents=True, exist_ok=True)
+    bundled_wallpaper = Path(__file__).resolve().parents[1] / "assets" / "vini-os-mountain.jpg"
+    if bundled_wallpaper.is_file():
+        wallpaper = wallpaper_dir / "vini-os-mountain.jpg"
+        shutil.copyfile(bundled_wallpaper, wallpaper)
+        return wallpaper
+
     wallpaper = wallpaper_dir / "vini-os-clean.svg"
     wallpaper.write_text(
         """<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="900" viewBox="0 0 1440 900">

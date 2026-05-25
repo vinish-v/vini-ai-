@@ -1,0 +1,6 @@
+Vini OS mountain wallpaper
+
+Source: Unsplash photo infssQ2tjeM
+Download URL used: https://unsplash.com/photos/infssQ2tjeM/download?force=true&w=1600
+
+The image is bundled as a local runtime asset so Vini Computer wallpaper works offline.

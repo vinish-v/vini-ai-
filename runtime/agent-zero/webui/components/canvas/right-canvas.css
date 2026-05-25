@@ -49,7 +49,7 @@ body.right-canvas-resizing {
 
 .right-canvas-rail {
   position: fixed;
-  top: 96px;
+  top: 18px;
   right: 18px;
   z-index: 1500;
   display: flex;
@@ -66,6 +66,10 @@ body.right-canvas-resizing {
   box-shadow: 0 18px 42px rgba(0, 0, 0, 0.34);
   background: rgba(9, 10, 13, 0.92);
   backdrop-filter: blur(16px);
+}
+
+.right-canvas.is-open .right-canvas-rail {
+  display: none;
 }
 
 .right-canvas-rail-separator {
@@ -182,6 +186,10 @@ body.right-canvas-resizing {
   border-radius: 14px;
   background: rgba(3, 5, 10, 0.34);
   backdrop-filter: blur(16px) saturate(1.12);
+}
+
+.right-canvas.is-os-mode .right-canvas-close-button {
+  color: color-mix(in srgb, var(--color-primary) 72%, #ffffff);
 }
 
 .right-canvas-title-block {
@@ -355,7 +363,8 @@ body.right-canvas-resizing {
 }
 
 .right-canvas.is-os-mode .browser-canvas-surface.is-mounted,
-.right-canvas.is-os-mode .editor-canvas-surface.is-mounted {
+.right-canvas.is-os-mode .editor-canvas-surface.is-mounted,
+.right-canvas.is-os-mode .build-canvas-surface.is-mounted {
   inset: 54px 18px 84px 18px;
   width: auto;
   height: auto;
@@ -375,13 +384,20 @@ body.right-canvas-resizing {
   z-index: 28;
 }
 
+.right-canvas.is-os-mode .build-canvas-surface.is-mounted {
+  inset: 46px 18px 84px 18px;
+  z-index: 32;
+}
+
 .right-canvas.is-os-mode.is-os-browser-active .browser-canvas-surface.is-mounted,
-.right-canvas.is-os-mode.is-os-editor-active .editor-canvas-surface.is-mounted {
+.right-canvas.is-os-mode.is-os-editor-active .editor-canvas-surface.is-mounted,
+.right-canvas.is-os-mode.is-os-build-active .build-canvas-surface.is-mounted {
   z-index: 42;
 }
 
 .right-canvas.is-os-mode .browser-canvas-surface.is-mounted::before,
-.right-canvas.is-os-mode .editor-canvas-surface.is-mounted::before {
+.right-canvas.is-os-mode .editor-canvas-surface.is-mounted::before,
+.right-canvas.is-os-mode .build-canvas-surface.is-mounted::before {
   content: "Browser";
   position: absolute;
   inset: 0 0 auto 0;
@@ -403,8 +419,13 @@ body.right-canvas-resizing {
   content: "Editor";
 }
 
+.right-canvas.is-os-mode .build-canvas-surface.is-mounted::before {
+  content: "Build";
+}
+
 .right-canvas.is-os-mode .browser-canvas-surface.is-mounted > x-component,
-.right-canvas.is-os-mode .editor-canvas-surface.is-mounted > x-component {
+.right-canvas.is-os-mode .editor-canvas-surface.is-mounted > x-component,
+.right-canvas.is-os-mode .build-canvas-surface.is-mounted > x-component {
   padding-top: 34px;
   background: #05070d;
 }
@@ -440,6 +461,11 @@ body.right-canvas-resizing {
 .vini-os-editor-close {
   top: 80px;
   right: 34px;
+}
+
+.vini-os-build-close {
+  top: 50px;
+  right: 26px;
 }
 
 .right-canvas-surface-panel > x-component,

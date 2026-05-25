@@ -8,15 +8,15 @@
   "theme_color": "#333333",
   "icons": [
     {
-      "src": "/public/vini-ai-mark.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
+      "src": "/public/vini-ai-mark.png",
+      "sizes": "2048x2048",
+      "type": "image/png",
       "purpose": "maskable"
     },
     {
-      "src": "/public/vini-ai-mark.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
+      "src": "/public/vini-ai-mark.png",
+      "sizes": "2048x2048",
+      "type": "image/png",
       "purpose": "any"
     }
   ]

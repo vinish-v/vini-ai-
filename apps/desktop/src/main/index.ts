@@ -6,6 +6,7 @@ import { RuntimeManager } from "./runtimeManager.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const loadingLogoUrl = new URL("../renderer/vini-ai-mark.png", import.meta.url).toString();
 const hostBridge = new HostBridge();
 const runtimeManager = new RuntimeManager(hostBridge);
 
@@ -29,7 +30,8 @@ function loadingPage(message: string, detail = ""): string {
     :root { color-scheme: dark; font-family: Inter, Segoe UI, system-ui, sans-serif; background: #050505; color: #f5f5f5; }
     body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #050505; }
     main { width: min(560px, calc(100vw - 48px)); border: 1px solid #262626; border-radius: 10px; padding: 28px; background: #0d0d0d; }
-    .mark { width: 48px; height: 48px; border-radius: 10px; display: grid; place-items: center; background: #f5f5f5; color: #050505; font-weight: 900; font-size: 25px; margin-bottom: 18px; }
+    .mark { width: 72px; height: 72px; border-radius: 18px; display: grid; place-items: center; background: #050505; border: 1px solid #2a2a2a; margin-bottom: 18px; overflow: hidden; box-shadow: 0 18px 42px rgba(0,0,0,.36); }
+    .mark img { width: 100%; height: 100%; object-fit: cover; }
     h1 { margin: 0 0 10px; font-size: 26px; line-height: 1.15; }
     p { margin: 0; color: #b8b8be; line-height: 1.55; }
     pre { margin: 18px 0 0; white-space: pre-wrap; color: #fca5a5; background: #120808; border: 1px solid #3f1717; border-radius: 8px; padding: 12px; font-size: 12px; }
@@ -37,7 +39,9 @@ function loadingPage(message: string, detail = ""): string {
 </head>
 <body>
   <main>
-    <div class="mark">V</div>
+    <div class="mark" aria-hidden="true">
+      <img src="${loadingLogoUrl}" alt="">
+    </div>
     <h1>${escapeHtml(message)}</h1>
     <p>Vini AI is starting the local runtime and will open the app UI here when it is ready.</p>
     ${detail ? `<pre>${escapeHtml(detail)}</pre>` : ""}

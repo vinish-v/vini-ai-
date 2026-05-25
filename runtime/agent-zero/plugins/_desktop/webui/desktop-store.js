@@ -265,6 +265,18 @@ const model = {
     return await this.onMount(element, { mode: "canvas" });
   },
 
+  async startAtAppStartup() {
+    this.restoreDesktopShutdownState();
+    this.setDesktopIntentionalShutdown(false);
+    await this.refresh();
+    return await this.ensureDesktopSession({
+      select: true,
+      progress: false,
+      source: "app-startup",
+      message: DESKTOP_START_MESSAGE,
+    });
+  },
+
   async onMount(element = null, options = {}) {
     if (element) this._root = element;
     this._mode = options?.mode === "modal" ? "modal" : "canvas";
@@ -2384,7 +2396,7 @@ const model = {
     if (normalized === "writer") return await this.create("document", "odt");
     if (normalized === "spreadsheet") return await this.create("spreadsheet", "ods");
     if (normalized === "presentation") return await this.create("presentation", "odp");
-    if (["terminal", "settings", "workdir", "files", "file-manager"].includes(normalized)) {
+    if (["terminal", "settings", "workdir", "files", "file-manager", "projects", "downloads", "home"].includes(normalized)) {
       return await this.launchDesktopApp(normalized);
     }
     return null;

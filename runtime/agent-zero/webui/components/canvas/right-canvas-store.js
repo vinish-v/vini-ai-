@@ -44,6 +44,8 @@ const model = {
   osActiveAppId: "",
   _initialized: false,
   _registering: false,
+  _registered: false,
+  _registrationPromise: null,
   _rootElement: null,
   _resizeCleanup: null,
   _lastPayloadBySurface: {},
@@ -65,12 +67,29 @@ const model = {
       this.applyLayoutState();
     });
 
-    if (!this._registering) {
-      this._registering = true;
+    await this.ensureRegistered();
+  },
+
+  async ensureRegistered() {
+    if (this._registered) return;
+    if (this._registrationPromise) {
+      await this._registrationPromise;
+      return;
+    }
+
+    this._registering = true;
+    this._registrationPromise = (async () => {
       await callJsExtensions("surfaces_register", this);
       await callJsExtensions("right_canvas_register_surfaces", this);
-      this._registering = false;
+      this._registered = true;
       this.ensureActiveSurface();
+    })();
+
+    try {
+      await this._registrationPromise;
+    } finally {
+      this._registering = false;
+      this._registrationPromise = null;
     }
   },
 
@@ -119,6 +138,7 @@ const model = {
   },
 
   async open(surfaceId = "", payload = {}) {
+    await this.ensureRegistered();
     const targetId = normalizeSurfaceId(surfaceId || this.activeSurfaceId || this.defaultSurfaceId() || "");
     const surface = this.getSurface(targetId);
     if (!surface) {
@@ -167,7 +187,7 @@ const model = {
   },
 
   isComputerAppSurface(surfaceId = "") {
-    return ["browser", "editor"].includes(normalizeSurfaceId(surfaceId));
+    return ["browser", "editor", "build"].includes(normalizeSurfaceId(surfaceId));
   },
 
   isOsAppOpen(surfaceId = "") {
@@ -180,6 +200,7 @@ const model = {
   },
 
   async openOsApp(surfaceId = "", payload = {}) {
+    await this.ensureRegistered();
     const targetId = normalizeSurfaceId(surfaceId);
     const appSurface = this.getSurface(targetId);
     const desktopSurface = this.getSurface("desktop");
@@ -288,6 +309,7 @@ const model = {
   },
 
   async openLatest(surfaceId = "", payload = {}) {
+    await this.ensureRegistered();
     const targetId = normalizeSurfaceId(surfaceId || this.activeSurfaceId || this.defaultSurfaceId() || "");
     if (!targetId) return false;
     if (this.latestSurfaceMode(targetId) === SURFACE_MODE_FLOATING) {
@@ -409,6 +431,7 @@ const model = {
   },
 
   async toggle(surfaceId = "", payload = {}) {
+    await this.ensureRegistered();
     const targetId = normalizeSurfaceId(surfaceId || this.activeSurfaceId || this.panelSurfaces[0]?.id || "");
     if (this.isOpen && targetId === this.activeSurfaceId) {
       await this.close();
@@ -418,6 +441,7 @@ const model = {
   },
 
   async toggleCanvas() {
+    await this.ensureRegistered();
     if (this.isMobileMode) {
       return false;
     }
@@ -601,3 +625,7 @@ const model = {
 };
 
 export const store = createStore("rightCanvas", model);
+globalThis.ViniRightCanvas = store;
+if (typeof window !== "undefined") {
+  window.ViniRightCanvas = store;
+}

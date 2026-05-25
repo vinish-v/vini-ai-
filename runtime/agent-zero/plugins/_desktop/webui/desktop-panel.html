@@ -63,7 +63,7 @@
           <div class="office-editor-wrap" x-show="$store.desktop.session" style="display: none;">
             <div class="office-editor-scroll" :class="{ 'is-desktop': $store.desktop.hasOfficialOffice() }" @click.self="$store.desktop.focusEditor()">
               <template x-if="$store.desktop.hasOfficialOffice()">
-                <div class="vini-os-frame">
+                <div class="vini-os-frame" x-data="{ appLauncherOpen: false }" @keydown.escape.window="appLauncherOpen = false">
                   <div class="vini-os-wallpaper" aria-hidden="true">
                     <span class="vini-os-star star-a"></span>
                     <span class="vini-os-star star-b"></span>
@@ -92,7 +92,88 @@
                     x-init="$nextTick(() => $store.desktop.mountDesktopFrameHost($el))"
                   >
                   </div>
+                  <div class="vini-os-launcher" x-show="appLauncherOpen" style="display: none;" @click.self="appLauncherOpen = false">
+                    <div class="vini-os-launcher-panel" role="dialog" aria-label="Applications" @click.stop>
+                      <div class="vini-os-launcher-head">
+                        <div>
+                          <strong>Applications</strong>
+                          <span>Launch runtime apps inside Vini Computer</span>
+                        </div>
+                        <button type="button" class="vini-os-launcher-close" title="Close launcher" aria-label="Close launcher" @click="appLauncherOpen = false">
+                          <span class="material-symbols-outlined">close</span>
+                        </button>
+                      </div>
+
+                      <div class="vini-os-launcher-section">
+                        <span class="vini-os-launcher-label">Office</span>
+                        <div class="vini-os-app-grid">
+                          <button type="button" class="vini-os-app-tile" @click="appLauncherOpen = false; $store.desktop.launchDesktopApp('writer')">
+                            <span class="material-symbols-outlined">edit_note</span>
+                            <strong>Writer</strong>
+                            <small>LibreOffice</small>
+                          </button>
+                          <button type="button" class="vini-os-app-tile" @click="appLauncherOpen = false; $store.desktop.launchDesktopApp('calc')">
+                            <span class="material-symbols-outlined">table_chart</span>
+                            <strong>Calc</strong>
+                            <small>LibreOffice</small>
+                          </button>
+                          <button type="button" class="vini-os-app-tile" @click="appLauncherOpen = false; $store.desktop.launchDesktopApp('impress')">
+                            <span class="material-symbols-outlined">co_present</span>
+                            <strong>Impress</strong>
+                            <small>LibreOffice</small>
+                          </button>
+                        </div>
+                      </div>
+
+                      <div class="vini-os-launcher-section">
+                        <span class="vini-os-launcher-label">Work</span>
+                        <div class="vini-os-app-grid">
+                          <button type="button" class="vini-os-app-tile" @click="appLauncherOpen = false; $store.rightCanvas?.open?.('browser')">
+                            <span class="material-symbols-outlined">language</span>
+                            <strong>Browser</strong>
+                            <small>Web tasks</small>
+                          </button>
+                          <button type="button" class="vini-os-app-tile" @click="appLauncherOpen = false; $store.rightCanvas?.open?.('editor')">
+                            <span class="material-symbols-outlined">article</span>
+                            <strong>Editor</strong>
+                            <small>Files and code</small>
+                          </button>
+                          <button type="button" class="vini-os-app-tile" @click="appLauncherOpen = false; $store.desktop.launchDesktopApp('terminal')">
+                            <span class="material-symbols-outlined">terminal</span>
+                            <strong>Terminal</strong>
+                            <small>Shell</small>
+                          </button>
+                          <button type="button" class="vini-os-app-tile" @click="appLauncherOpen = false; $store.desktop.launchDesktopApp('workdir')">
+                            <span class="material-symbols-outlined">folder</span>
+                            <strong>Files</strong>
+                            <small>Workdir</small>
+                          </button>
+                          <button type="button" class="vini-os-app-tile" @click="appLauncherOpen = false; $store.desktop.launchDesktopApp('projects')">
+                            <span class="material-symbols-outlined">folder_special</span>
+                            <strong>Projects</strong>
+                            <small>/a0/usr/projects</small>
+                          </button>
+                          <button type="button" class="vini-os-app-tile" @click="appLauncherOpen = false; $store.desktop.launchDesktopApp('downloads')">
+                            <span class="material-symbols-outlined">download</span>
+                            <strong>Downloads</strong>
+                            <small>/a0/usr/downloads</small>
+                          </button>
+                          <button type="button" class="vini-os-app-tile" @click="appLauncherOpen = false; $store.desktop.launchDesktopApp('settings')">
+                            <span class="material-symbols-outlined">settings</span>
+                            <strong>Settings</strong>
+                            <small>Desktop</small>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                   <div class="vini-os-dock" aria-label="Vini dock" @click.stop>
+                    <button type="button" class="vini-os-dock-icon" :class="{ 'is-active': appLauncherOpen }" title="Applications" aria-label="Applications" @click="appLauncherOpen = !appLauncherOpen">
+                      <span class="material-symbols-outlined">apps</span>
+                    </button>
+                    <button type="button" class="vini-os-dock-icon" title="Build" aria-label="Build" @click="$store.rightCanvas?.open?.('build')">
+                      <span class="material-symbols-outlined">code_blocks</span>
+                    </button>
                     <button type="button" class="vini-os-dock-icon" title="Browser" aria-label="Browser" @click="$store.rightCanvas?.open?.('browser')">
                       <span class="material-symbols-outlined">language</span>
                     </button>
@@ -105,10 +186,10 @@
                     <button type="button" class="vini-os-dock-icon" title="Files" aria-label="Files" @click="$store.desktop.runNewMenuAction('workdir')">
                       <span class="material-symbols-outlined">folder</span>
                     </button>
-                    <button type="button" class="vini-os-dock-icon" title="Writer" aria-label="Writer" @click="$store.desktop.runNewMenuAction('writer')">
+                    <button type="button" class="vini-os-dock-icon" title="Writer" aria-label="Writer" @click="$store.desktop.launchDesktopApp('writer')">
                       <span class="material-symbols-outlined">edit_note</span>
                     </button>
-                    <button type="button" class="vini-os-dock-icon" title="Spreadsheet" aria-label="Spreadsheet" @click="$store.desktop.runNewMenuAction('spreadsheet')">
+                    <button type="button" class="vini-os-dock-icon" title="Calc" aria-label="Calc" @click="$store.desktop.launchDesktopApp('calc')">
                       <span class="material-symbols-outlined">table_chart</span>
                     </button>
                     <button type="button" class="vini-os-dock-icon" title="Settings" aria-label="Settings" @click="$store.desktop.runNewMenuAction('settings')">
@@ -719,33 +800,21 @@
       overflow: hidden;
       pointer-events: none;
       background:
-        radial-gradient(circle at 10% 14%, rgba(255, 255, 255, 0.54) 0 1px, transparent 2px),
-        radial-gradient(circle at 28% 32%, rgba(255, 255, 255, 0.36) 0 1px, transparent 2px),
-        radial-gradient(circle at 72% 22%, rgba(255, 255, 255, 0.28) 0 1px, transparent 2px),
-        radial-gradient(circle at 80% 54%, rgba(255, 255, 255, 0.32) 0 1px, transparent 2px),
-        radial-gradient(circle at 56% 40%, rgba(255, 255, 255, 0.22) 0 1px, transparent 2px),
-        linear-gradient(180deg, rgba(255, 255, 255, 0.05), transparent 46%);
+        linear-gradient(180deg, rgba(2, 4, 10, 0.14), rgba(2, 4, 10, 0.32)),
+        url("/plugins/_desktop/assets/vini-os-mountain.jpg") center / cover no-repeat;
     }
 
     .vini-os-wallpaper::after {
       content: "";
       position: absolute;
-      left: 50%;
-      top: 48%;
-      width: min(34cqw, 360px);
-      aspect-ratio: 1.55 / 1;
-      border-radius: 50% 50% 45% 55%;
+      inset: 0;
       background:
-        radial-gradient(circle at 28% 62%, rgba(255, 122, 168, 0.9), transparent 30%),
-        radial-gradient(circle at 48% 44%, rgba(110, 231, 255, 0.8), transparent 32%),
-        linear-gradient(135deg, #d8f7ff 0%, #6f9fd1 34%, #172131 72%);
-      clip-path: polygon(2% 80%, 17% 48%, 34% 18%, 62% 4%, 96% 0, 77% 18%, 65% 39%, 65% 58%, 75% 73%, 92% 78%, 72% 93%, 48% 100%, 22% 95%);
-      filter: drop-shadow(0 46px 70px rgba(0, 0, 0, 0.54));
-      transform: translate(-50%, -50%) rotate(-7deg);
-      opacity: 0.74;
+        radial-gradient(circle at 54% 48%, transparent 0 42%, rgba(0, 0, 0, 0.20) 72%),
+        linear-gradient(90deg, rgba(2, 4, 10, 0.24), transparent 36%, rgba(2, 4, 10, 0.14));
     }
 
     .vini-os-star {
+      display: none;
       position: absolute;
       width: 3px;
       height: 3px;
@@ -959,6 +1028,150 @@
       backdrop-filter: blur(24px) saturate(1.18);
       transform: translateX(-50%);
       pointer-events: auto;
+    }
+
+    .vini-os-launcher {
+      position: absolute;
+      inset: 34px 0 86px 0;
+      z-index: 18;
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+      padding: 0 20px 18px;
+      background: linear-gradient(180deg, rgba(2, 4, 10, 0.08), rgba(2, 4, 10, 0.46));
+      backdrop-filter: blur(2px);
+    }
+
+    .vini-os-launcher-panel {
+      width: min(650px, calc(100% - 20px));
+      max-height: min(560px, calc(100% - 12px));
+      overflow: auto;
+      padding: 16px;
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      border-radius: 18px;
+      background: rgba(6, 9, 15, 0.86);
+      box-shadow: 0 26px 90px rgba(0, 0, 0, 0.48);
+      backdrop-filter: blur(22px) saturate(1.15);
+    }
+
+    .vini-os-launcher-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+
+    .vini-os-launcher-head div {
+      display: flex;
+      min-width: 0;
+      flex-direction: column;
+      gap: 3px;
+    }
+
+    .vini-os-launcher-head strong {
+      color: rgba(255, 255, 255, 0.94);
+      font-size: 18px;
+      line-height: 1.1;
+    }
+
+    .vini-os-launcher-head span,
+    .vini-os-launcher-label,
+    .vini-os-app-tile small {
+      color: rgba(218, 228, 255, 0.64);
+      font-size: 12px;
+      line-height: 1.25;
+    }
+
+    .vini-os-launcher-close,
+    .vini-os-app-tile {
+      appearance: none;
+      border: 1px solid rgba(255, 255, 255, 0.10);
+      color: rgba(255, 255, 255, 0.90);
+      cursor: pointer;
+      font: inherit;
+    }
+
+    .vini-os-launcher-close {
+      display: grid;
+      flex: 0 0 34px;
+      width: 34px;
+      height: 34px;
+      place-items: center;
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.07);
+    }
+
+    .vini-os-launcher-close:hover,
+    .vini-os-app-tile:hover {
+      border-color: rgba(133, 177, 255, 0.38);
+      background: rgba(255, 255, 255, 0.12);
+    }
+
+    .vini-os-launcher-close .material-symbols-outlined {
+      font-size: 18px;
+    }
+
+    .vini-os-launcher-section {
+      display: flex;
+      flex-direction: column;
+      gap: 9px;
+      margin-top: 14px;
+    }
+
+    .vini-os-launcher-section:first-of-type {
+      margin-top: 0;
+    }
+
+    .vini-os-launcher-label {
+      font-weight: 760;
+      text-transform: uppercase;
+    }
+
+    .vini-os-app-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(116px, 1fr));
+      gap: 10px;
+    }
+
+    .vini-os-app-tile {
+      display: flex;
+      min-height: 104px;
+      flex-direction: column;
+      align-items: flex-start;
+      justify-content: flex-end;
+      gap: 5px;
+      padding: 12px;
+      border-radius: 14px;
+      background: rgba(255, 255, 255, 0.075);
+      text-align: left;
+      transition: background-color 0.16s ease, border-color 0.16s ease, transform 0.16s ease;
+    }
+
+    .vini-os-app-tile:hover {
+      transform: translateY(-1px);
+    }
+
+    .vini-os-app-tile .material-symbols-outlined {
+      display: grid;
+      width: 34px;
+      height: 34px;
+      place-items: center;
+      border-radius: 11px;
+      background: rgba(103, 151, 255, 0.18);
+      color: rgba(216, 231, 255, 0.96);
+      font-size: 21px;
+    }
+
+    .vini-os-app-tile strong {
+      max-width: 100%;
+      overflow: hidden;
+      color: rgba(255, 255, 255, 0.94);
+      font-size: 13px;
+      font-weight: 760;
+      line-height: 1.15;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
 
     .vini-os-dock-icon {

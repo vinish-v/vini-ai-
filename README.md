@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/assets/vini-ai-logo.png" alt="Vini AI" width="420">
+</p>
+
 # Vini AI
 
 [![Windows](https://img.shields.io/badge/platform-Windows-0078D4?style=for-the-badge&logo=windows&logoColor=white)](#quick-start)

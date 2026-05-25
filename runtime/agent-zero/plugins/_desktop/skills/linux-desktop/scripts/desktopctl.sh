@@ -76,7 +76,7 @@ Commands:
   type TEXT                   Type text into the focused window.
   click X Y                   Move and click at X,Y in Desktop coordinates.
   dblclick X Y                Move and double-click at X,Y in Desktop coordinates.
-  launch APP                  Launch writer, calc, impress, terminal, settings, or workdir.
+  launch APP                  Launch writer, calc, impress, terminal, settings, workdir, projects, downloads, or home.
   open-path [PATH]            Open PATH in Thunar, defaulting to /a0/usr/workdir.
   calc-set-cell FILE SHEET CELL VALUE
                               Open FILE in visible Calc, set SHEET!CELL, save, and verify.
@@ -269,11 +269,24 @@ launch_app() {
       run_detached xfce4-settings-manager
       ;;
     workdir|files|file-manager)
+      mkdir -p /a0/usr/workdir
+      run_detached thunar /a0/usr/workdir
+      ;;
+    projects)
+      mkdir -p /a0/usr/projects
+      run_detached thunar /a0/usr/projects
+      ;;
+    downloads)
+      mkdir -p /a0/usr/downloads
+      run_detached thunar /a0/usr/downloads
+      ;;
+    home)
+      mkdir -p /a0/usr/workdir
       run_detached thunar /a0/usr/workdir
       ;;
     *)
       echo "Unknown app: ${app:-<empty>}" >&2
-      echo "Expected: writer, calc, impress, terminal, settings, or workdir." >&2
+      echo "Expected: writer, calc, impress, terminal, settings, workdir, projects, downloads, or home." >&2
       exit 2
       ;;
   esac

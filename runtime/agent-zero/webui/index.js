@@ -14,6 +14,8 @@ import { store as chatTopStore } from "/components/chat/top-section/chat-top-sto
 import { store as _tooltipsStore } from "/components/tooltips/tooltip-store.js";
 import { store as messageQueueStore } from "/components/chat/message-queue/message-queue-store.js";
 import { store as syncStore } from "/components/sync/sync-store.js"
+import { store as rightCanvasStore } from "/components/canvas/right-canvas-store.js";
+import { store as desktopStore } from "/plugins/_desktop/webui/desktop-store.js";
 import { getUserHour12, getUserTimezone } from "/js/time-utils.js";
 
 globalThis.fetchApi = api.fetchApi; // TODO - backward compatibility for non-modular scripts, remove once refactored to alpine
@@ -797,6 +799,12 @@ async function startPolling() {
   _doPoll();
 }
 
+function startViniComputerEnvironment() {
+  desktopStore.startAtAppStartup?.().catch((error) => {
+    console.warn("[index] Vini Computer startup failed:", error);
+  });
+}
+
 // All initializations and event listeners are now consolidated here
 document.addEventListener("DOMContentLoaded", function () {
   // Assign DOM elements to variables now that the DOM is ready
@@ -816,6 +824,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
   // Start polling for updates
   startPolling();
+  startViniComputerEnvironment();
 });
 
 /*

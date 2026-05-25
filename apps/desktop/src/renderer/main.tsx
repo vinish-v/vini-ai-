@@ -157,7 +157,9 @@ function App() {
     <main className="app-shell">
       <aside className="sidebar">
         <div className="brand-block">
-          <div className="brand-mark">V</div>
+          <div className="brand-mark" aria-hidden="true">
+            <img src="/vini-ai-mark.png" alt="" />
+          </div>
           <div>
             <h1>Vini AI</h1>
             <p>Agent runtime control</p>

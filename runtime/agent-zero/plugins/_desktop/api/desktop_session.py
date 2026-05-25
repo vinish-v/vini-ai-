@@ -154,6 +154,9 @@ class DesktopSession(ApiHandler):
             "workdir",
             "files",
             "file-manager",
+            "projects",
+            "downloads",
+            "home",
         }
         aliases = {
             "spreadsheet": "calc",

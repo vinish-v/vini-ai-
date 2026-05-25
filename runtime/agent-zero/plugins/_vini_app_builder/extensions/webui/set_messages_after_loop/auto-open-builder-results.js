@@ -11,7 +11,11 @@ export default async function syncBuilderResultsIntoCanvas(context) {
     if (getToolName(payload) !== "vini_app_builder") continue;
     if (!isFresh(args.timestamp, payload.last_modified)) continue;
 
-    const result = parseMaybeJson(payload.tool_result) || parseMaybeJson(args.content) || {};
+    const result = parseMaybeJson(payload.tool_result)
+      || parseToolOutputJson(payload.tool_result)
+      || parseMaybeJson(args.content)
+      || parseToolOutputJson(args.content)
+      || {};
     const projectId = getProjectId(payload, result);
     const key = [args?.id || "", projectId || "", payload.action || ""].join(":");
     const persistedKey = `vini.builder.opened.${key}`;
@@ -50,7 +54,11 @@ function pickPayloadFields(args = {}) {
 }
 
 function getToolName(payload = {}) {
-  return String(payload._tool_name || payload.tool_name || "").trim();
+  const explicit = String(payload._tool_name || payload.tool_name || "").trim();
+  if (explicit) return explicit;
+  const output = String(payload.tool_result || "").trim();
+  if (output.startsWith("vini_app_builder ")) return "vini_app_builder";
+  return "";
 }
 
 function getProjectId(payload = {}, result = {}) {
@@ -75,6 +83,14 @@ function parseMaybeJson(value) {
   } catch {
     return null;
   }
+}
+
+function parseToolOutputJson(value) {
+  if (typeof value !== "string") return null;
+  const start = value.indexOf("{");
+  const end = value.lastIndexOf("}");
+  if (start < 0 || end <= start) return null;
+  return parseMaybeJson(value.slice(start, end + 1));
 }
 
 function isFresh(timestamp, fallbackTimestamp) {

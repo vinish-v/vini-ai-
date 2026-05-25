@@ -16,7 +16,14 @@ Actions:
 - `export`: create a local ZIP export. Args: `project_id`.
 - `list`: list Vini app projects.
 
-Rules:
+Routing rules:
+- For any request to build, create, code, generate, scaffold, run, preview, or test a website, web app, frontend, backend, full-stack app, React app, Vite app, Express app, API app, dashboard, landing page, portfolio, or local app project, use `vini_app_builder` as the primary workflow.
+- Do not create app projects only with `code_execution_tool`. Generic terminal/code execution may be used only for focused diagnostics after a `vini_app_builder` project exists, and the project manifest/log must remain the source of truth.
+- For full-stack/backend requests, still use `vini_app_builder`: create the project, write backend files such as `server/index.ts`, write frontend files, install dependencies, build, start preview, and verify the API with real command output.
+- Keep Vini Computer visible for build tasks by opening the Build surface through the app-builder result flow; the user should see files, logs, preview, and proof in Vini Computer.
+- If you are about to write a long shell heredoc for an app-building task, stop and use `vini_app_builder` `write` actions instead so progress is visible and recoverable.
+
+Project rules:
 - For website-building requests, create or update a `vini_app_builder` project instead of only answering with code.
 - After writing code, run real install/build/typecheck commands where applicable.
 - Start preview and verify HTTP response before saying the app is ready.
