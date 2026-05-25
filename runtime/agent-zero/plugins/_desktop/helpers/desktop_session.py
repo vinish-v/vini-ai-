@@ -1374,6 +1374,9 @@ done
 if command -v xfdesktop >/dev/null 2>&1; then
   timeout 4 xfdesktop --reload >/dev/null 2>&1 || true
 fi
+if command -v xfce4-panel >/dev/null 2>&1; then
+  timeout 4 xfce4-panel --quit >/dev/null 2>&1 || true
+fi
 """ % str(session.profile_dir),
             encoding="utf-8",
         )
@@ -1491,7 +1494,7 @@ fi
         env = self._xfce_process_env(session, "xfdesktop")
         for command in (
             ([xfdesktop, "--reload"] if xfdesktop else None),
-            ([shutil.which("xfce4-panel") or "xfce4-panel", "--restart"]),
+            ([shutil.which("xfce4-panel") or "xfce4-panel", "--quit"]),
         ):
             if not command or not command[0]:
                 continue
