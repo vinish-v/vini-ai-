@@ -637,7 +637,10 @@ def list_files(project_id: str) -> dict[str, Any]:
 
 
 def read_file(project_id: str, path: str) -> dict[str, Any]:
-    target = _safe_project_file(project_id, path)
+    try:
+        target = _safe_project_file(project_id, path)
+    except ValueError as exc:
+        return {"ok": False, "error": str(exc)}
     if not target.is_file():
         return {"ok": False, "error": f"File not found: {path}"}
     if target.stat().st_size > 1024 * 1024:
@@ -646,7 +649,10 @@ def read_file(project_id: str, path: str) -> dict[str, Any]:
 
 
 def write_file(project_id: str, path: str, content: str) -> dict[str, Any]:
-    target = _safe_project_file(project_id, path)
+    try:
+        target = _safe_project_file(project_id, path)
+    except ValueError as exc:
+        return {"ok": False, "error": str(exc)}
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(content, encoding="utf-8")
     manifest = _load_manifest(project_id)
