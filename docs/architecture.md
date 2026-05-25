@@ -1,0 +1,41 @@
+# Vini AI Architecture
+
+Vini AI is a Windows desktop shell around the real Vini AI runtime.
+
+## Runtime Boundary
+
+- `runtime/agent-zero` is the rebranded Vini AI runtime forked from `agent0ai/agent-zero`.
+- Vini AI does not mock runtime APIs or replace model/provider configuration in v1.
+- The desktop app controls the runtime through Docker CLI commands and HTTP health probes.
+- Runtime data is mounted into `/a0/usr` from the Electron user data directory, not stored in tracked source.
+- The local Docker image is built as `vini-ai/agent-runtime:local` from `runtime/Dockerfile.vini-ai`.
+
+## Desktop App
+
+- `apps/desktop` is an Electron + Vite + React app.
+- The main process owns Docker orchestration and filesystem access.
+- The renderer only talks through a constrained preload API exposed as `window.vini`.
+- Runtime status cards are derived from real Docker, HTTP, and local file checks.
+- The main process also starts a token-authenticated Windows host bridge on loopback.
+  The runtime can use it only through scoped folders and approval-gated actions.
+  Details are in [windows-host-bridge.md](./windows-host-bridge.md).
+
+## Vini AI Computer
+
+- The live computer surface is the real Agent Zero/Vini AI browser runtime, not a mock preview.
+- Browser pages are driven through Playwright inside the runtime container.
+- The browser viewer streams real Chromium screencast frames over the runtime WebSocket API.
+- Agent browser actions emit `browser_viewer_action` events so active viewers can show live cursor/action markers for clicks, typing, navigation, scrolling, and form interactions.
+- Fresh browser and search actions auto-open the live Browser surface when browser autofocus is enabled, so the user sees work as it happens instead of finding screenshots after the task.
+- The live Browser surface includes stream status, measured frame cadence, point overlays, and a compact action feed backed by runtime events.
+- Full Windows desktop control remains gated behind the scoped host bridge and computer-use backend. If that backend is not armed or connected, Vini AI must report that setup gap instead of pretending OS-level control is available.
+
+## Default Runtime Contract
+
+- Container name: `vini-ai-agent-zero`
+- Docker image: `vini-ai/agent-runtime:local`
+- Base image lineage: `agent0ai/agent-zero:latest`
+- Host URL: `http://127.0.0.1:50080`
+- Container web port: `80`
+- Data mount: `%APPDATA%/Vini AI/agent-zero/usr` to `/a0/usr`
+- Host bridge URL inside Docker: `http://host.docker.internal:50180`

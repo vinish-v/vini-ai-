@@ -1,0 +1,23 @@
+{
+  "name": "Vini AI",
+  "short_name": "Vini AI",
+  "description": "Autonomous AI agent",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#1a1a1a",
+  "theme_color": "#333333",
+  "icons": [
+    {
+      "src": "/public/vini-ai-mark.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/public/vini-ai-mark.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

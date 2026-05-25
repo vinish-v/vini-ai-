@@ -1,0 +1,128 @@
+<html>
+<head>
+  <title>Vini Voice</title>
+  <script type="module">
+    import { store as modelConfigStore } from "/plugins/_model_config/webui/model-config-store.js";
+  </script>
+</head>
+
+<body>
+  <div
+    x-data
+    x-init="
+      config.voice_model ||= {};
+      config.voice_model.kwargs ||= {};
+      config.voice_model.enabled ??= true;
+      config.voice_model.provider ||= 'groq';
+      config.voice_model.name ||= 'llama-3.3-70b-versatile';
+      config.voice_model.api_base ||= '';
+      config.voice_model.ctx_length ||= 8192;
+      config.voice_model.vision ??= false;
+      config.voice_model.kwargs.max_tokens ??= 128;
+      config.voice_model.kwargs.temperature ??= 0.35;
+      $store.modelConfig?.ensureLoaded?.();
+    "
+  >
+    <template x-if="config?.voice_model">
+      <div class="plugin-config-page">
+        <div class="section-title">Vini Voice Model</div>
+        <div class="section-description">
+          Configure the LLM used only by voice conversation. Main chat and task models are not changed.
+        </div>
+
+        <div class="field">
+          <div class="field-label">
+            <div class="field-title">Use Dedicated Voice Model</div>
+            <div class="field-description">When enabled, voice replies use this model instead of the main chat model.</div>
+          </div>
+          <div class="field-control">
+            <label class="toggle">
+              <input type="checkbox" x-model="config.voice_model.enabled" />
+              <span class="toggler"></span>
+            </label>
+          </div>
+        </div>
+
+        <div class="field">
+          <div class="field-label">
+            <div class="field-title">Provider</div>
+            <div class="field-description">Choose the provider for fast spoken replies.</div>
+          </div>
+          <div class="field-control">
+            <select x-model="config.voice_model.provider">
+              <template x-for="provider in ($store.modelConfig?.chatProviders || [])" :key="provider.value">
+                <option :value="provider.value" x-text="provider.label || provider.value"></option>
+              </template>
+              <option value="groq">Groq</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="field">
+          <div class="field-label">
+            <div class="field-title">Model Name</div>
+            <div class="field-description">Groq examples: <code>llama-3.3-70b-versatile</code> or <code>qwen/qwen3-32b</code>.</div>
+          </div>
+          <div class="field-control">
+            <input type="text" x-model="config.voice_model.name" />
+          </div>
+        </div>
+
+        <div class="field">
+          <div class="field-label">
+            <div class="field-title">API Base</div>
+            <div class="field-description">Optional. Leave blank for the provider default.</div>
+          </div>
+          <div class="field-control">
+            <input type="text" x-model="config.voice_model.api_base" placeholder="Provider default" />
+          </div>
+        </div>
+
+        <div class="field">
+          <div class="field-label">
+            <div class="field-title">Max Tokens</div>
+            <div class="field-description">Keep this low for fast voice responses.</div>
+          </div>
+          <div class="field-control">
+            <input type="number" min="16" max="1024" step="16" x-model.number="config.voice_model.kwargs.max_tokens" />
+          </div>
+        </div>
+
+        <div class="field">
+          <div class="field-label">
+            <div class="field-title">Temperature</div>
+            <div class="field-description">Lower values make short voice replies more direct.</div>
+          </div>
+          <div class="field-control">
+            <input type="number" min="0" max="2" step="0.05" x-model.number="config.voice_model.kwargs.temperature" />
+          </div>
+        </div>
+
+        <div class="field">
+          <div class="field-label">
+            <div class="field-title">Context Length</div>
+            <div class="field-description">Token context limit used for voice mode.</div>
+          </div>
+          <div class="field-control">
+            <input type="number" min="1024" step="1024" x-model.number="config.voice_model.ctx_length" />
+          </div>
+        </div>
+
+        <div class="voice-model-actions">
+          <button type="button" class="btn btn-field" @click="window.openModal?.('/plugins/_model_config/webui/api-keys.html')">
+            Configure API Keys
+          </button>
+        </div>
+      </div>
+    </template>
+
+    <style>
+      .voice-model-actions {
+        display: flex;
+        justify-content: flex-end;
+        margin-top: 1rem;
+      }
+    </style>
+  </div>
+</body>
+</html>

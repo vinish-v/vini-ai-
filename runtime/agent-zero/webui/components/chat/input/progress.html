@@ -1,0 +1,98 @@
+<html>
+<head>
+    <script type="module">
+        import { store as chatNavStore } from "/components/chat/navigation/chat-navigation-store.js";
+    </script>
+</head>
+<body>
+    <div id="progress-bar-box" x-data>
+        <x-extension id="chat-input-progress-start"></x-extension>
+
+        <!-- Hidden legacy progress-bar element (keeps JS updater happy, not displayed) -->
+        <span id="progress-bar" style="display:none;"></span>
+
+        <div id="progress-bar-right">
+          <h4
+            id="progress-bar-stop-speech"
+            x-data="{
+              speaking: window.ttsService?.isSpeaking?.() || false,
+              _listener: null,
+              init() {
+                this._listener = (event) => {
+                  this.speaking = !!event?.detail?.isSpeaking;
+                };
+                window.ttsService?.addEventListener?.('statechange', this._listener);
+              },
+              cleanup() {
+                if (this._listener) {
+                  window.ttsService?.removeEventListener?.('statechange', this._listener);
+                }
+              },
+            }"
+            x-init="init()"
+            x-destroy="cleanup()"
+            x-cloak
+            x-show="speaking"
+          >
+              <span id="stop-speech" @click="window.ttsService?.stop?.()" style="cursor: pointer" title="Stop Speech" aria-label="Stop Speech">
+                  <span class="icon material-symbols-outlined">volume_off</span>
+              </span>
+          </h4>
+          <x-extension id="chat-nav-after"></x-extension>
+        </div>
+        <x-extension id="chat-input-progress-end"></x-extension>
+    </div>
+
+
+    <style>
+    #progress-bar-box {
+      width: 100%;
+      max-width: min(780px, calc(100vw - 2rem));
+      min-height: 2.42rem;
+      margin: 0 auto -0.08rem;
+      padding: 0.36rem 0.7rem;
+      box-sizing: border-box;
+      display: flex;
+      flex-wrap: nowrap;
+      justify-content: flex-start;
+      align-items: center;
+      z-index: 1001;
+      gap: 0.58rem;
+      color: rgba(255,255,255,0.68);
+      background:
+        radial-gradient(circle at 70% -30%, rgba(103,113,255,0.13), transparent 42%),
+        linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.026)),
+        rgba(22,23,27,0.9);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 18px;
+      box-shadow: 0 14px 38px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.055);
+      backdrop-filter: blur(18px);
+    }
+    body.right-canvas-open #progress-bar-box {
+      max-width: max(420px, min(720px, calc(100vw - var(--right-canvas-width, 560px) - 4rem)));
+    }
+    #progress-bar-box > x-extension { display: contents; }
+    #progress-bar-box h4 { margin: 0; }
+    #progress-bar-box button,
+    #progress-bar-box .config-button {
+      border-radius: 999px !important;
+      background-color: transparent !important;
+      border-color: transparent !important;
+      color: rgba(170,176,255,0.95) !important;
+    }
+    #progress-bar-box button:hover,
+    #progress-bar-box .config-button:hover {
+      background-color: rgba(255,255,255,0.06) !important;
+      border-color: rgba(255,255,255,0.08) !important;
+      color: #ffffff !important;
+    }
+    #progress-bar-box .material-symbols-outlined {
+      font-size: 1rem;
+    }
+    #progress-bar-right { display: flex; align-items: center; gap: var(--spacing-sm); flex-shrink: 0; margin-left: auto;}
+    #progress-bar-right > x-extension { display: contents; }
+    .shiny-text { background: linear-gradient(to right, var(--color-primary-dark) 20%, var(--color-text) 40%, var(--color-text) 60%, var(--color-primary-dark) 60%); background-size: 200% auto; color: transparent; -webkit-background-clip: text; background-clip: text; animation: shine 1s linear infinite; }
+    @keyframes shine { to { background-position: -200% center; } }
+    </style>
+</body>
+</html>

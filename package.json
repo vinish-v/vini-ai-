@@ -1,0 +1,12 @@
+{
+  "name": "vini-ai-workspace",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Vini AI Windows desktop shell around the Vini AI runtime.",
+  "scripts": {
+    "desktop:dev": "npm --prefix apps/desktop run dev",
+    "desktop:electron": "npm --prefix apps/desktop run electron",
+    "desktop:build": "npm --prefix apps/desktop run build",
+    "desktop:package": "npm --prefix apps/desktop run package"
+  }
+}

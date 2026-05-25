@@ -1,0 +1,9 @@
+FROM agent0ai/agent-zero:latest
+
+COPY agent-zero/ /a0/
+COPY entrypoint-overrides/run_ViniAI.sh /exe/run_A0.sh
+RUN /opt/venv-a0/bin/python -m pip install --no-cache-dir --no-deps supertonic==1.3.1
+RUN /opt/venv-a0/bin/python -m pip install --no-cache-dir webrtcvad-wheels==2.0.14
+RUN /opt/venv-a0/bin/python -m pip install --no-cache-dir onnx-asr==0.11.0
+RUN /opt/venv-a0/bin/python -m pip install --no-cache-dir faster-whisper==1.2.1
+RUN chmod +x /exe/run_A0.sh

@@ -1,0 +1,55 @@
+<html>
+<head>
+    <title>Windows Host Bridge</title>
+</head>
+
+<body>
+    <div x-data>
+        <template x-if="config">
+            <div>
+                <div class="section-title">Windows Host Bridge</div>
+                <div class="section-description">
+                    Vini AI Desktop starts a token-authenticated localhost bridge for scoped Windows folders.
+                    Edit the desktop user-data file <code>host-bridge.json</code> to change allowed folders and approval rules.
+                </div>
+
+                <div class="field">
+                    <div class="field-label">
+                        <div class="field-title">Enabled</div>
+                        <div class="field-description">
+                            Allows the agent to use the desktop-provided Windows bridge when the runtime receives bridge credentials.
+                        </div>
+                    </div>
+                    <div class="field-control">
+                        <input type="checkbox" x-model="config.enabled" />
+                    </div>
+                </div>
+
+                <div class="field">
+                    <div class="field-label">
+                        <div class="field-title">Bridge URL override</div>
+                        <div class="field-description">
+                            Leave blank to use VINI_HOST_BRIDGE_URL from the Vini AI desktop container environment.
+                        </div>
+                    </div>
+                    <div class="field-control">
+                        <input type="text" x-model="config.bridge_url" placeholder="http://host.docker.internal:50180" />
+                    </div>
+                </div>
+
+                <div class="field">
+                    <div class="field-label">
+                        <div class="field-title">Request timeout</div>
+                        <div class="field-description">
+                            Maximum seconds to wait for a host approval or command result.
+                        </div>
+                    </div>
+                    <div class="field-control">
+                        <input type="number" min="10" max="300" x-model.number="config.request_timeout_seconds" />
+                    </div>
+                </div>
+            </div>
+        </template>
+    </div>
+</body>
+</html>

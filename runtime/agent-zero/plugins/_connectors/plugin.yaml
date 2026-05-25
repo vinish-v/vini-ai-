@@ -1,0 +1,9 @@
+name: _connectors
+title: Connectors
+description: Universal connector registry, status validation, and agent action routing.
+version: 1.0.0
+always_enabled: true
+settings_sections:
+  - external
+per_project_config: false
+per_agent_config: false

@@ -1,0 +1,643 @@
+<html>
+
+<head>
+  <script type="module">
+    import { store as sidebarStore } from "/components/sidebar/sidebar-store.js";
+    import { store as chatsStore } from "/components/sidebar/chats/chats-store.js";
+    import { store as projectsStore } from "/components/projects/projects-store.js";
+    import { store as chatInputStore } from "/components/chat/input/input-store.js";
+    import { store as rightCanvasStore } from "/components/canvas/right-canvas-store.js";
+    import { store as pluginSettingsStore } from "/components/plugins/plugin-settings-store.js";
+    import { store as memoryStore } from "/plugins/_memory/webui/memory-dashboard-store.js";
+  </script>
+  <!-- Wrapper composes existing sidebar components -->
+</head>
+
+<body>
+  <div x-data>
+    <template x-if="$store.sidebar">
+      <div class="sidebar-shell">
+        <x-component path="sidebar/top-section/header-icons.html"></x-component>
+        <div id="left-panel" class="panel" x-data :class="{'hidden': !$store.sidebar.isOpen}">
+          <x-extension id="sidebar-start"></x-extension>
+          <!--Sidebar upper elements-->
+          <div class="left-panel-top no-scrollbar">
+            <nav class="vini-sidebar-nav" aria-label="Vini AI navigation">
+              <x-extension id="vini-sidebar-nav-start"></x-extension>
+
+              <button type="button" class="vini-nav-button vini-nav-primary" @click="$store.tasks.createTask()">
+                <span class="material-symbols-outlined" aria-hidden="true">edit_square</span>
+                <span>New task</span>
+              </button>
+
+              <div class="vini-recent-task-dropdown" @click.outside="$store.tasks.closeRecentDropdown()">
+                <button type="button"
+                        class="vini-recent-trigger"
+                        :aria-expanded="$store.tasks.recentDropdownOpen ? 'true' : 'false'"
+                        @click="$store.tasks.toggleRecentDropdown()">
+                  <span class="material-symbols-outlined" aria-hidden="true">history</span>
+                  <span class="vini-recent-trigger-copy">
+                    <span>Recent tasks</span>
+                    <strong x-text="$store.tasks.recentDropdownLabel"></strong>
+                  </span>
+                  <span class="vini-recent-count" x-text="$store.tasks.recentTaskCount"></span>
+                  <span class="material-symbols-outlined vini-recent-chevron" aria-hidden="true"
+                        :class="{'vini-recent-chevron-open': $store.tasks.recentDropdownOpen}">expand_more</span>
+                </button>
+                <div class="vini-recent-menu"
+                     x-show="$store.tasks.recentDropdownOpen"
+                     x-transition>
+                  <template x-if="$store.tasks.recentItems.length === 0">
+                    <div class="vini-recent-empty">No recent tasks yet.</div>
+                  </template>
+                  <template x-for="item in $store.tasks.recentItems" :key="`${item.source}-${item.id}`">
+                    <button type="button"
+                            class="vini-recent-item"
+                            :class="{'vini-recent-item-active': item.id === $store.chats.selected || item.id === $store.tasks.selected}"
+                            @click="$store.tasks.selectRecent(item)">
+                      <span :class="{'project-color-ball': true, 'heartbeat': item.running}"
+                            :style="item.project?.color ? { backgroundColor: item.project.color } : { border: '1px solid var(--color-border)' }"></span>
+                      <span class="vini-recent-item-copy">
+                        <strong x-text="item.title"></strong>
+                        <small x-text="item.subtitle"></small>
+                      </span>
+                    </button>
+                  </template>
+                </div>
+              </div>
+
+              <div class="vini-nav-section">
+                <button type="button" class="vini-nav-button" @click="openModal('components/plugins/list/plugin-list.html')">
+                  <span class="material-symbols-outlined" aria-hidden="true">smart_toy</span>
+                  <span>Agent</span>
+                  <span class="vini-nav-badge">New</span>
+                </button>
+                <button type="button" class="vini-nav-button" @click="openModal('modals/scheduler/scheduler-modal.html')">
+                  <span class="material-symbols-outlined" aria-hidden="true">schedule</span>
+                  <span>Scheduled</span>
+                </button>
+                <button type="button" class="vini-nav-button" @click="openModal('modals/history/history.html')">
+                  <span class="material-symbols-outlined" aria-hidden="true">manage_search</span>
+                  <span>History</span>
+                </button>
+                <button type="button" class="vini-nav-button" @click="$store.memoryDashboardStore.openModal()">
+                  <span class="material-symbols-outlined" aria-hidden="true">library_books</span>
+                  <span>Library</span>
+                </button>
+              </div>
+
+              <div class="vini-nav-section">
+                <div class="vini-section-label">
+                  <span>Projects</span>
+                  <button type="button" class="vini-section-icon" title="New project" aria-label="New project" @click="$store.projects.openProjectsModal()">
+                    <span class="material-symbols-outlined" aria-hidden="true">add</span>
+                  </button>
+                </div>
+                <button type="button" class="vini-nav-button" @click="$store.projects.openProjectsModal()">
+                  <span class="material-symbols-outlined" aria-hidden="true">create_new_folder</span>
+                  <span>Projects</span>
+                </button>
+              </div>
+
+              <div class="vini-nav-section">
+                <div class="vini-section-label">Tools</div>
+                <button type="button" class="vini-nav-button" @click="$store.rightCanvas.toggleCanvas()">
+                  <span class="material-symbols-outlined" aria-hidden="true">desktop_windows</span>
+                  <span>Vini AI Computer</span>
+                </button>
+                <button type="button" class="vini-nav-button" @click="$store.chatInput.browseFiles()">
+                  <span class="material-symbols-outlined" aria-hidden="true">folder_open</span>
+                  <span>Files</span>
+                </button>
+                <button type="button" class="vini-nav-button" @click="ensureModalOpen('components/connectors/connectors.html')">
+                  <span class="material-symbols-outlined" aria-hidden="true">hub</span>
+                  <span>Connectors</span>
+                </button>
+                <button type="button" class="vini-nav-button" @click="$store.pluginSettingsPrototype.openConfig('_oauth')">
+                  <span class="material-symbols-outlined" aria-hidden="true">key</span>
+                  <span>Connect Codex</span>
+                </button>
+              </div>
+
+              <div class="vini-nav-section">
+                <div class="vini-section-label">Remote Access</div>
+                <button type="button" class="vini-nav-button" @click="ensureModalOpen('settings/tunnel/remote-link.html')">
+                  <span class="material-symbols-outlined" aria-hidden="true">share</span>
+                  <span>Remote Link</span>
+                </button>
+                <button type="button" class="vini-nav-button" @click="$store.pluginSettingsPrototype.openConfig('_whatsapp_integration')">
+                  <span class="material-symbols-outlined" aria-hidden="true">chat</span>
+                  <span>WhatsApp</span>
+                </button>
+                <button type="button" class="vini-nav-button" @click="$store.pluginSettingsPrototype.openConfig('_telegram_integration')">
+                  <span class="material-symbols-outlined" aria-hidden="true">send</span>
+                  <span>Telegram</span>
+                </button>
+                <button type="button" class="vini-nav-button" @click="$store.pluginSettingsPrototype.openConfig('_email_integration')">
+                  <span class="material-symbols-outlined" aria-hidden="true">mail</span>
+                  <span>Email</span>
+                </button>
+              </div>
+
+              <div class="vini-nav-section">
+                <div class="vini-section-label">Chat Actions</div>
+                <button type="button" class="vini-nav-button" @click="$store.chats.loadChats()">
+                  <span class="material-symbols-outlined" aria-hidden="true">upload_file</span>
+                  <span>Load Chat</span>
+                </button>
+                <button type="button" class="vini-nav-button" x-show="$store.chats.selected" @click="$store.chats.saveChat()">
+                  <span class="material-symbols-outlined" aria-hidden="true">download</span>
+                  <span>Save Chat</span>
+                </button>
+                <button type="button" class="vini-nav-button" x-show="$store.chats.selected" @click="$confirmClick($event, () => { $store.chats.resetChat(); })">
+                  <span class="material-symbols-outlined" aria-hidden="true">delete_sweep</span>
+                  <span>Clear Chat</span>
+                </button>
+              </div>
+
+              <x-extension id="vini-sidebar-nav-end"></x-extension>
+            </nav>
+
+            <!-- Chats List -->
+            <div class="config-section" id="chats-section">
+              <x-component path="sidebar/chats/chats-list.html"></x-component>
+            </div>
+
+            <!-- Tasks List -->
+            <div class="config-section" id="tasks-section">
+              <x-component path="sidebar/tasks/tasks-list.html"></x-component>
+            </div>
+          </div>
+          <!--Sidebar lower elements-->
+          <div class="left-panel-bottom">
+            <x-component path="sidebar/bottom/sidebar-bottom.html"></x-component>
+            <div class="vini-sidebar-footer-actions">
+              <button type="button" class="vini-nav-button" @click="openModal('settings/settings.html')">
+                <span class="material-symbols-outlined" aria-hidden="true">settings</span>
+                <span>Settings</span>
+              </button>
+              <button type="button" class="vini-nav-button" x-show="$store.chats.loggedIn" @click="$confirmClick($event, () => { $store.chats.logout(); })">
+                <span class="material-symbols-outlined" aria-hidden="true">logout</span>
+                <span>Logout</span>
+              </button>
+              <button type="button" class="vini-nav-button vini-nav-muted" @click="$confirmClick($event, () => { $store.chats.restart(); })">
+                <span class="material-symbols-outlined" aria-hidden="true">restart_alt</span>
+                <span>Restart Vini AI</span>
+              </button>
+            </div>
+          </div>
+          <x-extension id="sidebar-end"></x-extension>
+        </div>
+      </div>
+    </template>
+  </div>
+
+  <style>
+    /* Left Panel styles from index.css */
+    #left-panel {
+      background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.025), transparent 38%),
+        #050608;
+      border-right: 1px solid var(--vini-border, var(--color-border));
+      box-sizing: border-box;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-start;
+      transition: all var(--transition-speed) ease-in-out;
+      width: 300px;
+      min-width: 300px;
+      color: var(--color-text);
+      box-shadow: 10px 0 38px rgba(0, 0, 0, 0.28);
+      user-select: none;
+      -webkit-user-select: none;
+      /* Safari compatibility */
+      height: 100vh;
+      /* Ensure full height */
+      overflow: hidden;
+      /* Prevent overall panel overflow */
+    }
+
+    /* Ensure component host behaves like the original direct children for flex layout */
+    #left-panel>.left-panel-top,
+    #left-panel>.left-panel-bottom {
+      display: flex;
+      flex-direction: column;
+    }
+
+    #left-panel>.left-panel-top {
+      flex: 1;
+      min-height: 0;
+      /* allow inner flex children to shrink properly */
+    }
+
+    #left-panel.hidden {
+      margin-left: -300px;
+    }
+
+    .left-panel-top {
+      flex: 1 1 auto;
+      /* Take available space */
+      display: -webkit-flex;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      /* Critical for allowing flex children to shrink */
+      overflow-x: hidden;
+      overflow-y: auto;
+      justify-content: flex-start;
+      margin-top: 5rem;
+      padding: 0 0.95rem 0 0.95rem;
+    }
+
+    .left-panel-bottom {
+      position: relative;
+      flex-shrink: 0;
+      flex-grow: 0;
+      /* Prevent bottom from growing */
+      padding: 0 0.95rem 0.9rem;
+    }
+
+    .vini-sidebar-nav {
+      display: flex;
+      flex-direction: column;
+      gap: 1.15rem;
+      flex: 0 0 auto;
+      margin-bottom: 0.35rem;
+    }
+
+    .vini-nav-section {
+      display: flex;
+      flex-direction: column;
+      gap: 0.34rem;
+    }
+
+    .vini-section-label {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+      min-height: 1.6rem;
+      padding: 0 0.25rem;
+      color: color-mix(in srgb, var(--vini-text-soft, var(--color-text-muted)) 68%, transparent);
+      font-size: 0.72rem;
+      font-weight: 760;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .vini-section-icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 1.55rem;
+      height: 1.55rem;
+      padding: 0;
+      border: 0;
+      border-radius: 7px;
+      color: var(--vini-text-soft, var(--color-text-muted));
+      background: transparent;
+      cursor: pointer;
+    }
+
+    .vini-section-icon:hover {
+      color: var(--color-text);
+      background: rgba(255,255,255,0.065);
+    }
+
+    .vini-section-icon .material-symbols-outlined {
+      font-size: 1rem;
+    }
+
+    .vini-nav-button {
+      appearance: none;
+      display: flex;
+      align-items: center;
+      gap: 0.72rem;
+      width: 100%;
+      min-height: 2.45rem;
+      padding: 0.54rem 0.68rem;
+      border: 1px solid transparent;
+      border-radius: 10px;
+      color: color-mix(in srgb, var(--color-text) 86%, var(--vini-text-soft));
+      background: transparent;
+      font: inherit;
+      font-size: 0.91rem;
+      font-weight: 610;
+      text-align: left;
+      cursor: pointer;
+      transition: background-color 0.16s ease, border-color 0.16s ease, color 0.16s ease, transform 0.16s ease;
+    }
+
+    .vini-nav-button:hover {
+      color: var(--color-text);
+      border-color: var(--vini-border, var(--color-border));
+      background: rgba(255,255,255,0.06);
+    }
+
+    .vini-nav-button:active {
+      transform: translateY(1px);
+    }
+
+    .vini-nav-button .material-symbols-outlined {
+      flex: 0 0 auto;
+      width: 1.25rem;
+      color: color-mix(in srgb, var(--color-text) 74%, transparent);
+      font-size: 1.18rem;
+      line-height: 1;
+    }
+
+    .vini-nav-primary {
+      min-height: 3rem;
+      border-color: var(--vini-border-strong, var(--color-border));
+      background: rgba(255,255,255,0.065);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.055), 0 14px 28px rgba(0,0,0,0.22);
+    }
+
+    .vini-nav-primary:hover {
+      border-color: color-mix(in srgb, var(--color-primary) 30%, var(--vini-border));
+      background: rgba(93,107,255,0.13);
+    }
+
+    .vini-recent-task-dropdown {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+      z-index: 15;
+    }
+
+    .vini-recent-trigger {
+      appearance: none;
+      display: grid;
+      grid-template-columns: 1.25rem minmax(0, 1fr) auto 1.2rem;
+      align-items: center;
+      gap: 0.72rem;
+      width: 100%;
+      min-height: 3.15rem;
+      padding: 0.58rem 0.68rem;
+      border: 1px solid var(--vini-border, var(--color-border));
+      border-radius: 10px;
+      color: var(--color-text);
+      background: rgba(255,255,255,0.04);
+      font: inherit;
+      text-align: left;
+      cursor: pointer;
+    }
+
+    .vini-recent-trigger:hover {
+      border-color: color-mix(in srgb, var(--color-primary) 28%, var(--vini-border));
+      background: rgba(255,255,255,0.065);
+    }
+
+    .vini-recent-trigger > .material-symbols-outlined {
+      font-size: 1.18rem;
+      color: color-mix(in srgb, var(--color-text) 72%, transparent);
+    }
+
+    .vini-recent-trigger-copy {
+      min-width: 0;
+      display: grid;
+      gap: 0.18rem;
+    }
+
+    .vini-recent-trigger-copy > span {
+      color: color-mix(in srgb, var(--vini-text-soft, var(--color-text-muted)) 78%, transparent);
+      font-size: 0.72rem;
+      font-weight: 760;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .vini-recent-trigger-copy strong {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: var(--color-text);
+      font-size: 0.88rem;
+      font-weight: 670;
+    }
+
+    .vini-recent-count {
+      min-width: 1.35rem;
+      height: 1.35rem;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 999px;
+      color: color-mix(in srgb, var(--color-text) 82%, transparent);
+      background: rgba(255,255,255,0.065);
+      font-size: 0.72rem;
+      font-weight: 760;
+    }
+
+    .vini-recent-chevron {
+      transition: transform 0.16s ease;
+    }
+
+    .vini-recent-chevron-open {
+      transform: rotate(180deg);
+    }
+
+    .vini-recent-menu {
+      position: absolute;
+      top: calc(100% + 0.4rem);
+      left: 0;
+      right: 0;
+      display: grid;
+      gap: 0.2rem;
+      max-height: min(24rem, calc(100vh - 12rem));
+      overflow-y: auto;
+      padding: 0.38rem;
+      border: 1px solid var(--vini-border, var(--color-border));
+      border-radius: 10px;
+      background: #090a0d;
+      box-shadow: 0 18px 40px rgba(0,0,0,0.38);
+    }
+
+    .vini-recent-item {
+      appearance: none;
+      display: grid;
+      grid-template-columns: 0.65rem minmax(0, 1fr);
+      align-items: center;
+      gap: 0.62rem;
+      width: 100%;
+      min-height: 2.75rem;
+      padding: 0.52rem 0.58rem;
+      border: 1px solid transparent;
+      border-radius: 8px;
+      color: var(--color-text);
+      background: transparent;
+      font: inherit;
+      text-align: left;
+      cursor: pointer;
+    }
+
+    .vini-recent-item:hover,
+    .vini-recent-item-active {
+      border-color: rgba(93,107,255,0.22);
+      background: rgba(93,107,255,0.12);
+    }
+
+    .vini-recent-item-copy {
+      min-width: 0;
+      display: grid;
+      gap: 0.18rem;
+    }
+
+    .vini-recent-item-copy strong,
+    .vini-recent-item-copy small {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .vini-recent-item-copy strong {
+      color: var(--color-text);
+      font-size: 0.86rem;
+      font-weight: 680;
+    }
+
+    .vini-recent-item-copy small {
+      color: var(--vini-text-soft, var(--color-text-muted));
+      font-size: 0.72rem;
+    }
+
+    .vini-recent-empty {
+      padding: 0.75rem;
+      color: var(--vini-text-soft, var(--color-text-muted));
+      font-size: 0.82rem;
+      text-align: center;
+    }
+
+    .vini-nav-badge {
+      margin-left: auto;
+      padding: 0.13rem 0.38rem;
+      border: 1px solid rgba(72, 198, 168, 0.36);
+      border-radius: 7px;
+      color: #7ef0d2;
+      background: rgba(72, 198, 168, 0.12);
+      font-size: 0.66rem;
+      font-weight: 760;
+    }
+
+    .vini-nav-muted {
+      color: var(--vini-text-soft, var(--color-text-muted));
+      font-size: 0.84rem;
+    }
+
+    .vini-sidebar-footer-actions {
+      display: flex;
+      flex-direction: column;
+      gap: 0.28rem;
+      padding-top: 0.62rem;
+      border-top: 1px solid var(--vini-border, var(--color-border));
+    }
+
+    /* Chats section container inside sidebar */
+    #chats-section {
+      display: -webkit-flex;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      flex: 1 1 auto;
+      /* Take all available space */
+      max-height: 100%;
+      overflow: hidden;
+    }
+
+    /* Tasks section container inside sidebar */
+    #tasks-section {
+      display: -webkit-flex;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      flex: 0 0 auto;
+      /* Shrink to content, no reserved space */
+      max-height: 40%;
+      /* Limit to 40% of viewport height when expanded */
+      margin-top: 0;
+      padding-top: 1.5rem;
+      overflow: hidden;
+    }
+
+    /* Flatten wrapper elements to maintain flex chain for inner scroll containers */
+    #chats-section>x-component,
+    #chats-section>x-component>div[x-data],
+    #tasks-section>x-component,
+    #tasks-section>x-component>div[x-data],
+    #tasks-section>x-component>div[x-data]>div[x-data] {
+      display: contents;
+    }
+
+    /* Bootstrap collapse elements need proper display for animation to work */
+    #tasks-section .collapse {
+      display: flex;
+      flex-direction: column;
+      flex: 1;
+      min-height: 0;
+    }
+
+    /* During the collapsing transition, allow height animation to control size */
+    #tasks-section .collapsing {
+      flex: 0 0 auto !important;
+    }
+
+    /* Common section header styling (Chats, Tasks) - matching Preferences style */
+    .section-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+      margin: 0 0 0.5rem 0;
+      padding: 0;
+      -webkit-user-select: none;
+      /* Safari compatibility */
+      user-select: none;
+      font-size: var(--font-size-normal);
+    }
+
+    /* Collapsible section headers (Tasks) */
+    .section-header-collapsible {
+      cursor: pointer;
+    }
+
+    .light-mode #left-panel {
+      box-shadow: 1px 0 10px rgba(0, 0, 0, 0.1);
+    }
+
+    @media (max-width: 768px) {
+      #left-panel {
+        position: fixed;
+        left: 0;
+        top: 0;
+        bottom: 0;
+      width: 300px !important;
+      /* Force width */
+        min-width: 300px;
+        z-index: 1003;
+        transition: all var(--transition-speed) ease-in-out;
+      }
+
+      #left-panel.hidden {
+        margin-left: -300px;
+      }
+    }
+
+    @media (max-height: 600px) {
+      #chats-section {
+        min-height: 100%;
+      }
+
+      .left-panel-top {
+        overflow-y: auto;
+        -webkit-scroll-behavior: smooth;
+        scroll-behavior: smooth;
+      }
+    }
+  </style>
+</body>
+
+</html>

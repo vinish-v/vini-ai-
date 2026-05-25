@@ -1,0 +1,48 @@
+- name: "Max Power"
+  chat:
+    provider: "openrouter"
+    name: "anthropic/claude-opus-4.6"
+    api_key: ""
+    api_base: ""
+    ctx_length: 200000
+    ctx_history: 0.7
+    vision: true
+    kwargs:
+      max_tokens: 2048
+  utility:
+    provider: "openrouter"
+    name: "openai/gpt-5.4-mini"
+    kwargs:
+      max_tokens: 384
+- name: "Balance"
+  chat:
+    provider: "openrouter"
+    name: "anthropic/claude-sonnet-4.6"
+    api_key: ""
+    api_base: ""
+    ctx_length: 200000
+    ctx_history: 0.7
+    vision: true
+    kwargs:
+      max_tokens: 2048
+  utility:
+    provider: "openrouter"
+    name: "google/gemini-3.1-flash-lite-preview"
+    kwargs:
+      max_tokens: 384
+- name: "Cost Efficient"
+  chat:
+    provider: "openrouter"
+    name: "moonshotai/kimi-k2.5"
+    api_key: ""
+    api_base: ""
+    ctx_length: 128000
+    ctx_history: 0.7
+    vision: false
+    kwargs:
+      max_tokens: 2048
+  utility:
+    provider: "openrouter"
+    name: "openai/gpt-5.4-nano"
+    kwargs:
+      max_tokens: 384

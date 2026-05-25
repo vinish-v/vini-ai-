@@ -1,0 +1,380 @@
+.vini-builder-modal,
+.vini-builder-modal-body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  background: #0d0f12;
+  color: #f4f6f8;
+}
+
+.vini-builder-panel {
+  display: grid;
+  grid-template-columns: minmax(280px, 340px) minmax(0, 1fr);
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  background: #0d0f12;
+  color: #f4f6f8;
+  font-size: 13px;
+}
+
+.vini-builder-sidebar {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  background: #14171b;
+}
+
+.vini-builder-header,
+.vini-builder-toolbar,
+.vini-builder-section-head,
+.vini-builder-actions,
+.vini-builder-actionbar,
+.vini-builder-active {
+  display: flex;
+  align-items: center;
+}
+
+.vini-builder-header {
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.vini-builder-kicker {
+  color: #8d97a5;
+  font-size: 11px;
+  line-height: 1.3;
+  text-transform: uppercase;
+}
+
+.vini-builder-header h2 {
+  margin: 0;
+  font-size: 20px;
+  line-height: 1.2;
+  letter-spacing: 0;
+}
+
+.vini-builder-icon-btn,
+.vini-builder-actionbar button,
+.vini-builder-primary,
+.vini-builder-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  height: 34px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 7px;
+  background: #1d2228;
+  color: #f4f6f8;
+  font: inherit;
+  cursor: pointer;
+}
+
+.vini-builder-icon-btn {
+  width: 34px;
+  padding: 0;
+}
+
+.vini-builder-primary {
+  flex: 1;
+  background: #f4f6f8;
+  color: #0d0f12;
+  border-color: #f4f6f8;
+  font-weight: 650;
+}
+
+.vini-builder-secondary {
+  flex: 0 0 auto;
+  padding: 0 12px;
+}
+
+.vini-builder-actionbar button {
+  padding: 0 10px;
+}
+
+.vini-builder-icon-btn:disabled,
+.vini-builder-actionbar button:disabled,
+.vini-builder-primary:disabled,
+.vini-builder-secondary:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.vini-builder-composer {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.vini-builder-composer input,
+.vini-builder-composer textarea {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 7px;
+  background: #0d0f12;
+  color: #f4f6f8;
+  font: inherit;
+  resize: vertical;
+}
+
+.vini-builder-composer input {
+  height: 36px;
+  padding: 0 10px;
+}
+
+.vini-builder-composer textarea {
+  min-height: 96px;
+  padding: 10px;
+  line-height: 1.45;
+}
+
+.vini-builder-projects {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 8px;
+}
+
+.vini-builder-project {
+  display: grid;
+  width: 100%;
+  gap: 5px;
+  padding: 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #d8dde5;
+  text-align: left;
+  cursor: pointer;
+}
+
+.vini-builder-project:hover,
+.vini-builder-project.is-active {
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.vini-builder-project-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 650;
+}
+
+.vini-builder-project-meta {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #98a2b3;
+  font-size: 12px;
+}
+
+.vini-builder-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: #8992a1;
+}
+
+.vini-builder-dot.is-ok {
+  background: #31d158;
+}
+
+.vini-builder-dot.is-error {
+  background: #ff453a;
+}
+
+.vini-builder-dot.is-busy {
+  background: #ffd60a;
+}
+
+.vini-builder-main {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.vini-builder-toolbar {
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 56px;
+  padding: 10px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.vini-builder-active {
+  min-width: 0;
+  gap: 8px;
+  font-weight: 650;
+}
+
+.vini-builder-active span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vini-builder-actionbar {
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.vini-builder-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 8px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  color: #c7ced8;
+}
+
+.vini-builder-grid {
+  display: grid;
+  grid-template-columns: minmax(360px, 1fr) minmax(260px, 360px);
+  min-height: 0;
+  flex: 1;
+}
+
+.vini-builder-preview,
+.vini-builder-inspector {
+  min-height: 0;
+}
+
+.vini-builder-preview {
+  display: flex;
+  flex-direction: column;
+  background: #0a0c0f;
+}
+
+.vini-builder-section-head {
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 38px;
+  padding: 0 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  color: #c7ced8;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.vini-builder-section-head a {
+  color: #f4f6f8;
+  text-decoration: none;
+}
+
+.vini-builder-preview iframe {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  border: 0;
+  background: #fff;
+}
+
+.vini-builder-placeholder,
+.vini-builder-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 120px;
+  color: #8d97a5;
+}
+
+.vini-builder-placeholder {
+  flex: 1;
+}
+
+.vini-builder-inspector {
+  display: grid;
+  grid-template-rows: minmax(160px, 0.48fr) minmax(220px, 0.52fr);
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
+  background: #111418;
+}
+
+.vini-builder-inspector section {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.vini-builder-files {
+  min-height: 0;
+  overflow: auto;
+  padding: 8px;
+}
+
+.vini-builder-file {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  align-items: center;
+  gap: 7px;
+  min-height: 26px;
+  color: #d8dde5;
+}
+
+.vini-builder-file .material-symbols-outlined {
+  color: #98a2b3;
+  font-size: 18px;
+}
+
+.vini-builder-file span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vini-builder-log {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: 10px 12px;
+  overflow: auto;
+  background: #090b0d;
+  color: #c7ced8;
+  font: 12px/1.45 ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  white-space: pre-wrap;
+}
+
+.spinning {
+  animation: vini-builder-spin 1s linear infinite;
+}
+
+@keyframes vini-builder-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 980px) {
+  .vini-builder-panel,
+  .vini-builder-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .vini-builder-sidebar,
+  .vini-builder-inspector {
+    border-right: 0;
+    border-left: 0;
+  }
+
+  .vini-builder-sidebar {
+    max-height: 46vh;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .vini-builder-grid {
+    overflow: auto;
+  }
+
+  .vini-builder-preview {
+    min-height: 420px;
+  }
+}

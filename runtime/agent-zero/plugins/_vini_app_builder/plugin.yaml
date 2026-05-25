@@ -1,0 +1,9 @@
+name: _vini_app_builder
+title: Vini App Builder
+description: Manus-style local website builder projects, previews, and exports for Vini Computer.
+version: 1.0.0
+always_enabled: true
+settings_sections:
+  - agent
+per_project_config: true
+per_agent_config: false

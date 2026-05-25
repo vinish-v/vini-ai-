@@ -1,0 +1,842 @@
+<html>
+  <head>
+    <title>Connectors</title>
+    <script type="module">
+      import { store as connectorsStore } from "/components/connectors/connectors-store.js";
+    </script>
+  </head>
+
+  <body class="connectors-modal">
+    <div
+      class="connectors"
+      x-data
+      x-init="$store.connectorsStore.onOpen()"
+    >
+      <div class="connectors-search">
+        <span class="material-symbols-outlined" aria-hidden="true">search</span>
+        <input
+          type="search"
+          placeholder="Search connectors"
+          x-model="$store.connectorsStore.search"
+          aria-label="Search connectors"
+        />
+      </div>
+
+      <div class="connectors-tabs">
+        <button
+          type="button"
+          :class="{ active: $store.connectorsStore.tab === 'apps' }"
+          @click="$store.connectorsStore.tab = 'apps'"
+        >Apps</button>
+        <button
+          type="button"
+          :class="{ active: $store.connectorsStore.tab === 'api' }"
+          @click="$store.connectorsStore.tab = 'api'"
+        >Custom API</button>
+        <button
+          type="button"
+          :class="{ active: $store.connectorsStore.tab === 'mcp' }"
+          @click="$store.connectorsStore.tab = 'mcp'"
+        >Custom MCP</button>
+        <button
+          class="connectors-create"
+          type="button"
+          @click="$store.connectorsStore.tab = 'api'"
+        >
+          <span>Create</span>
+          <span class="material-symbols-outlined" aria-hidden="true">expand_more</span>
+        </button>
+      </div>
+
+      <div
+        class="connectors-alert"
+        :class="$store.connectorsStore.statusTone"
+        x-show="$store.connectorsStore.statusMessage"
+        x-transition.opacity
+      >
+        <span class="material-symbols-outlined" aria-hidden="true" x-text="$store.connectorsStore.statusTone === 'error' ? 'error' : ($store.connectorsStore.statusTone === 'success' ? 'check_circle' : 'info')"></span>
+        <span x-text="$store.connectorsStore.statusMessage"></span>
+      </div>
+
+      <template x-if="$store.connectorsStore.tab === 'apps'">
+        <div class="connectors-layout">
+          <div class="connectors-grid" aria-label="Available connectors">
+            <template x-for="connector in $store.connectorsStore.filteredConnectors" :key="connector.id">
+              <button
+                type="button"
+                class="connector-card"
+                :class="{ selected: connector.id === $store.connectorsStore.selectedId }"
+                @click="$store.connectorsStore.selectConnector(connector)"
+              >
+                <span
+                  class="connector-logo"
+                  :class="`tone-${connector.tone || 'mono'} ${$store.connectorsStore.connectorIconSource(connector) ? 'has-brand-icon' : ''}`"
+                >
+                  <img
+                    class="connector-brand-icon"
+                    x-show="$store.connectorsStore.connectorIconSource(connector)"
+                    :src="$store.connectorsStore.connectorIconSource(connector)"
+                    :alt="`${connector.name} logo`"
+                    loading="lazy"
+                    @error="$event.currentTarget.closest('.connector-logo')?.classList.add('brand-icon-failed')"
+                  />
+                  <span class="connector-fallback-icon">
+                    <span class="material-symbols-outlined" x-show="connector.icon" x-text="connector.icon"></span>
+                    <span x-show="!connector.icon" x-text="connector.logo"></span>
+                  </span>
+                </span>
+                <span class="connector-copy">
+                  <strong x-text="connector.name"></strong>
+                  <small x-text="connector.description"></small>
+                </span>
+                <span
+                  class="connector-state"
+                  :class="$store.connectorsStore.connectorStatusClass(connector)"
+                  :title="$store.connectorsStore.connectorStatus(connector)"
+                >
+                  <span class="material-symbols-outlined" x-text="$store.connectorsStore.connectorButtonIcon(connector)"></span>
+                </span>
+              </button>
+            </template>
+
+            <div class="connector-empty" x-show="$store.connectorsStore.filteredConnectors.length === 0">
+              No connectors match this search.
+            </div>
+          </div>
+
+          <aside class="connector-details" x-show="$store.connectorsStore.selectedConnector">
+            <div class="connector-details-head">
+              <span
+                class="connector-details-logo"
+                :class="`tone-${$store.connectorsStore.selectedConnector?.tone || 'mono'} ${$store.connectorsStore.connectorIconSource($store.connectorsStore.selectedConnector) ? 'has-brand-icon' : ''}`"
+              >
+                <img
+                  class="connector-brand-icon"
+                  x-show="$store.connectorsStore.connectorIconSource($store.connectorsStore.selectedConnector)"
+                  :src="$store.connectorsStore.connectorIconSource($store.connectorsStore.selectedConnector, 128)"
+                  :alt="`${$store.connectorsStore.selectedConnector?.name || 'Connector'} logo`"
+                  loading="lazy"
+                  @error="$event.currentTarget.closest('.connector-details-logo')?.classList.add('brand-icon-failed')"
+                />
+                <span class="connector-fallback-icon">
+                  <span class="material-symbols-outlined" x-show="$store.connectorsStore.selectedConnector?.icon" x-text="$store.connectorsStore.selectedConnector?.icon"></span>
+                  <span x-show="!$store.connectorsStore.selectedConnector?.icon" x-text="$store.connectorsStore.selectedConnector?.logo"></span>
+                </span>
+              </span>
+              <div>
+                <h2 x-text="$store.connectorsStore.selectedConnector?.name"></h2>
+                <p x-text="$store.connectorsStore.selectedConnector?.description"></p>
+              </div>
+            </div>
+
+            <div class="connector-status-line">
+              <span>Status</span>
+              <strong
+                :class="$store.connectorsStore.connectorStatusClass($store.connectorsStore.selectedConnector)"
+                x-text="$store.connectorsStore.connectorStatus($store.connectorsStore.selectedConnector)"
+              ></strong>
+            </div>
+
+            <button
+              type="button"
+              class="connector-connect"
+              @click="$store.connectorsStore.connect($store.connectorsStore.selectedConnector)"
+            >
+              <span class="material-symbols-outlined" x-text="$store.connectorsStore.connectorButtonIcon($store.connectorsStore.selectedConnector)"></span>
+              <span x-text="$store.connectorsStore.connectorActionLabel($store.connectorsStore.selectedConnector)"></span>
+            </button>
+
+            <template x-if="$store.connectorsStore.selectedConnector?.type === 'oauth'">
+              <div class="connector-oauth-note">
+                <span class="material-symbols-outlined" aria-hidden="true">open_in_new</span>
+                <span>Sign-in opens in Chrome or Edge because Google and several providers block embedded browsers.</span>
+              </div>
+            </template>
+
+            <template x-if="$store.connectorsStore.selectedConnector?.type === 'api-key'">
+              <div class="connector-key-panel">
+                <div class="connector-key-title">
+                  <span class="material-symbols-outlined" aria-hidden="true">vpn_key</span>
+                  <span x-text="$store.connectorsStore.keyLabel($store.connectorsStore.selectedConnector)"></span>
+                </div>
+                <input
+                  type="password"
+                  autocomplete="off"
+                  :placeholder="$store.connectorsStore.selectedConnector?.envKeys?.[0] || 'API key'"
+                  x-model="$store.connectorsStore.apiKeyValue"
+                />
+                <input
+                  type="password"
+                  autocomplete="off"
+                  x-show="$store.connectorsStore.selectedConnector?.keyMode === 'all' && $store.connectorsStore.selectedConnector?.envKeys?.[1]"
+                  :placeholder="$store.connectorsStore.selectedConnector?.envKeys?.[1] || 'API secret'"
+                  x-model="$store.connectorsStore.apiSecretValue"
+                />
+                <div class="connector-key-actions">
+                  <button
+                    type="button"
+                    class="connector-secondary"
+                    @click="$store.connectorsStore.openExternal($store.connectorsStore.selectedConnector.authUrl)"
+                    x-show="$store.connectorsStore.selectedConnector?.authUrl"
+                  >
+                    <span class="material-symbols-outlined" aria-hidden="true">open_in_new</span>
+                    <span>Get key</span>
+                  </button>
+                  <button
+                    type="button"
+                    class="connector-save"
+                    @click="$store.connectorsStore.saveApiKey()"
+                    :disabled="$store.connectorsStore.savingKey"
+                  >
+                    <span class="material-symbols-outlined" x-text="$store.connectorsStore.savingKey ? 'progress_activity' : 'save'"></span>
+                    <span x-text="$store.connectorsStore.savingKey ? 'Saving' : 'Save to secrets'"></span>
+                  </button>
+                </div>
+              </div>
+            </template>
+
+            <div class="connector-detail-section">
+              <h3>Requirements</h3>
+              <template x-for="item in ($store.connectorsStore.selectedConnector?.requirements || [])" :key="item">
+                <div class="connector-chip-row">
+                  <span class="material-symbols-outlined" aria-hidden="true">check_circle</span>
+                  <span x-text="item"></span>
+                </div>
+              </template>
+            </div>
+
+            <div class="connector-detail-section">
+              <h3>Example prompts</h3>
+              <template x-for="prompt in ($store.connectorsStore.selectedConnector?.prompts || [])" :key="prompt">
+                <div class="connector-prompt">
+                  <span class="material-symbols-outlined" aria-hidden="true">chat_bubble</span>
+                  <span x-text="prompt"></span>
+                </div>
+              </template>
+            </div>
+          </aside>
+        </div>
+      </template>
+
+      <template x-if="$store.connectorsStore.tab === 'api'">
+        <div class="connector-custom-panel">
+          <div class="connector-custom-copy">
+            <h2>Custom API</h2>
+            <p>Save real API credentials into Vini AI settings. This stores environment variables only; Vini AI will not claim a connector is usable until a workflow or tool reads those variables.</p>
+          </div>
+          <div class="connector-custom-form">
+            <label>
+              <span>Connector name</span>
+              <input type="text" placeholder="Acme CRM" x-model="$store.connectorsStore.customApiName" />
+            </label>
+            <label>
+              <span>Base URL</span>
+              <input type="url" placeholder="https://api.example.com" x-model="$store.connectorsStore.customApiBaseUrl" />
+            </label>
+            <label>
+              <span>Auth header</span>
+              <input type="text" placeholder="Authorization" x-model="$store.connectorsStore.customApiHeader" />
+            </label>
+            <label>
+              <span>API key</span>
+              <input type="password" autocomplete="off" placeholder="Paste key" x-model="$store.connectorsStore.customApiKey" />
+            </label>
+            <button type="button" class="connector-connect" @click="$store.connectorsStore.saveCustomApi()">
+              <span class="material-symbols-outlined" aria-hidden="true">save</span>
+              <span>Save custom API</span>
+            </button>
+          </div>
+        </div>
+      </template>
+
+      <template x-if="$store.connectorsStore.tab === 'mcp'">
+        <div class="connector-mcp-panel">
+          <div class="connector-custom-copy">
+            <h2>Custom MCP</h2>
+            <p>Connect external MCP servers through Vini AI's existing MCP client settings. This keeps MCP setup in the real runtime configuration instead of a separate mock registry.</p>
+          </div>
+          <div class="connectors-grid mcp-list">
+            <template x-for="connector in $store.connectorsStore.mcpConnectors" :key="connector.id">
+              <button
+                type="button"
+                class="connector-card"
+                @click="$store.connectorsStore.selectConnector(connector); $store.connectorsStore.openMcpSettings()"
+              >
+                <span
+                  class="connector-logo"
+                  :class="`tone-${connector.tone || 'mono'} ${$store.connectorsStore.connectorIconSource(connector) ? 'has-brand-icon' : ''}`"
+                >
+                  <img
+                    class="connector-brand-icon"
+                    x-show="$store.connectorsStore.connectorIconSource(connector)"
+                    :src="$store.connectorsStore.connectorIconSource(connector)"
+                    :alt="`${connector.name} logo`"
+                    loading="lazy"
+                    @error="$event.currentTarget.closest('.connector-logo')?.classList.add('brand-icon-failed')"
+                  />
+                  <span class="connector-fallback-icon">
+                    <span class="material-symbols-outlined" x-show="connector.icon" x-text="connector.icon"></span>
+                    <span x-show="!connector.icon" x-text="connector.logo"></span>
+                  </span>
+                </span>
+                <span class="connector-copy">
+                  <strong x-text="connector.name"></strong>
+                  <small x-text="connector.description"></small>
+                </span>
+                <span class="connector-state is-needed">
+                  <span class="material-symbols-outlined">settings_ethernet</span>
+                </span>
+              </button>
+            </template>
+          </div>
+          <button type="button" class="connector-connect" @click="$store.connectorsStore.openMcpSettings()">
+            <span class="material-symbols-outlined" aria-hidden="true">hub</span>
+            <span>Open MCP settings</span>
+          </button>
+        </div>
+      </template>
+    </div>
+
+    <style>
+      .modal-inner.connectors-modal {
+        width: min(1080px, calc(100vw - 72px));
+        max-width: 1080px;
+      }
+
+      .modal-inner.connectors-modal .modal-bd {
+        padding: 0;
+      }
+
+      .connectors {
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+        min-height: min(740px, calc(100vh - 180px));
+        color: var(--color-text);
+      }
+
+      .connectors-search {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr);
+        align-items: center;
+        gap: 10px;
+        height: 48px;
+        padding: 0 14px;
+        border: 1px solid color-mix(in srgb, var(--color-border) 76%, transparent);
+        border-radius: 12px;
+        background: color-mix(in srgb, var(--color-panel) 78%, black 22%);
+      }
+
+      .connectors-search .material-symbols-outlined {
+        color: var(--color-text-secondary);
+        font-size: 22px;
+      }
+
+      .connectors-search input {
+        min-width: 0;
+        height: 100%;
+        border: 0;
+        outline: 0;
+        background: transparent;
+        color: var(--color-text);
+        font: inherit;
+        font-size: 0.98rem;
+      }
+
+      .connectors-tabs {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .connectors-tabs button {
+        appearance: none;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        height: 38px;
+        padding: 0 16px;
+        border: 0;
+        border-radius: 999px;
+        background: transparent;
+        color: var(--color-text-secondary);
+        font: inherit;
+        font-weight: 760;
+        cursor: pointer;
+      }
+
+      .connectors-tabs button.active {
+        background: color-mix(in srgb, var(--color-text) 10%, transparent);
+        color: var(--color-text);
+      }
+
+      .connectors-tabs .connectors-create {
+        margin-left: auto;
+        border: 1px solid color-mix(in srgb, var(--color-border) 80%, transparent);
+        border-radius: 10px;
+        background: color-mix(in srgb, var(--color-panel) 72%, black 28%);
+      }
+
+      .connectors-layout {
+        display: grid;
+        grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.9fr);
+        gap: 16px;
+        min-height: 0;
+      }
+
+      .connectors-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        align-content: start;
+        gap: 12px 14px;
+        max-height: min(620px, calc(100vh - 300px));
+        overflow: auto;
+        padding-right: 6px;
+      }
+
+      .connector-card {
+        appearance: none;
+        display: grid;
+        grid-template-columns: 54px minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 12px;
+        min-height: 94px;
+        padding: 14px;
+        border: 1px solid color-mix(in srgb, var(--color-border) 76%, transparent);
+        border-radius: 14px;
+        background:
+          linear-gradient(135deg, color-mix(in srgb, var(--color-text) 4%, transparent), transparent 56%),
+          color-mix(in srgb, var(--color-panel) 78%, black 22%);
+        color: var(--color-text);
+        font: inherit;
+        text-align: left;
+        cursor: pointer;
+        transition: border-color 0.16s ease, background 0.16s ease, transform 0.16s ease;
+      }
+
+      .connector-card:hover,
+      .connector-card:focus-visible,
+      .connector-card.selected {
+        border-color: color-mix(in srgb, #8f98ff 58%, var(--color-border));
+        background:
+          linear-gradient(135deg, rgba(143, 152, 255, 0.12), transparent 60%),
+          color-mix(in srgb, var(--color-panel) 86%, black 14%);
+        outline: none;
+      }
+
+      .connector-card:hover {
+        transform: translateY(-1px);
+      }
+
+      .connector-logo,
+      .connector-details-logo {
+        display: grid;
+        place-items: center;
+        border: 1px solid color-mix(in srgb, #fff 12%, transparent);
+        border-radius: 12px;
+        background: #1f1f22;
+        color: #f8fafc;
+        font-size: 0.85rem;
+        font-weight: 900;
+        letter-spacing: 0;
+        overflow: hidden;
+      }
+
+      .connector-logo {
+        width: 50px;
+        height: 50px;
+      }
+
+      .connector-details-logo {
+        width: 64px;
+        height: 64px;
+      }
+
+      .connector-logo .material-symbols-outlined,
+      .connector-details-logo .material-symbols-outlined {
+        font-size: 27px;
+      }
+
+      .connector-logo.has-brand-icon,
+      .connector-details-logo.has-brand-icon {
+        background:
+          linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02)),
+          #202126;
+        color: inherit;
+      }
+
+      .connector-brand-icon {
+        display: block;
+        width: 72%;
+        height: 72%;
+        object-fit: contain;
+        border-radius: 9px;
+      }
+
+      .connector-details-logo .connector-brand-icon {
+        width: 70%;
+        height: 70%;
+      }
+
+      .connector-fallback-icon {
+        display: grid;
+        place-items: center;
+      }
+
+      .connector-logo.has-brand-icon .connector-fallback-icon,
+      .connector-details-logo.has-brand-icon .connector-fallback-icon {
+        display: none;
+      }
+
+      .connector-logo.brand-icon-failed .connector-brand-icon,
+      .connector-details-logo.brand-icon-failed .connector-brand-icon {
+        display: none !important;
+      }
+
+      .connector-logo.brand-icon-failed .connector-fallback-icon,
+      .connector-details-logo.brand-icon-failed .connector-fallback-icon {
+        display: grid;
+      }
+
+      .tone-google { background: linear-gradient(135deg, #4285f4, #34a853 45%, #fbbc04 72%, #ea4335); color: white; }
+      .tone-calendar { background: linear-gradient(135deg, #1a73e8, #0f9d58); color: white; }
+      .tone-microsoft { background: linear-gradient(135deg, #0078d4, #00a4ef); color: white; }
+      .tone-blue { background: linear-gradient(135deg, #2563eb, #06b6d4); color: white; }
+      .tone-green { background: linear-gradient(135deg, #16a34a, #22c55e); color: white; }
+      .tone-orange { background: linear-gradient(135deg, #f97316, #f59e0b); color: #111; }
+      .tone-pink { background: linear-gradient(135deg, #ec4899, #f43f5e); color: white; }
+      .tone-red { background: linear-gradient(135deg, #ef4444, #fb7185); color: white; }
+      .tone-violet { background: linear-gradient(135deg, #6366f1, #8b5cf6); color: white; }
+      .tone-yellow { background: linear-gradient(135deg, #fde047, #f59e0b); color: #111; }
+      .tone-canva { background: linear-gradient(135deg, #00c4cc, #7d2ae8); color: white; }
+      .tone-slack { background: linear-gradient(135deg, #36c5f0, #2eb67d 38%, #ecb22e 70%, #e01e5a); color: white; }
+      .tone-chrome { background: linear-gradient(135deg, #4285f4, #34a853 42%, #fbbc04 68%, #ea4335); color: white; }
+      .tone-mono { background: linear-gradient(135deg, #2a2a2e, #111214); color: #f4f4f5; }
+
+      .connector-copy {
+        display: grid;
+        min-width: 0;
+        gap: 4px;
+      }
+
+      .connector-copy strong {
+        overflow: hidden;
+        font-size: 0.98rem;
+        font-weight: 830;
+        line-height: 1.18;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .connector-copy small {
+        display: -webkit-box;
+        overflow: hidden;
+        color: var(--color-text-secondary);
+        font-size: 0.84rem;
+        line-height: 1.32;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 2;
+      }
+
+      .connector-state {
+        display: grid;
+        width: 34px;
+        height: 34px;
+        place-items: center;
+        border: 1px solid color-mix(in srgb, var(--color-border) 72%, transparent);
+        border-radius: 10px;
+        background: color-mix(in srgb, var(--color-panel) 76%, black 24%);
+        color: var(--color-text);
+      }
+
+      .connector-state .material-symbols-outlined {
+        font-size: 20px;
+      }
+
+      .connector-state.is-ready {
+        border-color: color-mix(in srgb, #22c55e 48%, transparent);
+        color: #8cf2b1;
+      }
+
+      .connector-state.is-available {
+        border-color: color-mix(in srgb, #8f98ff 48%, transparent);
+        color: #aeb4ff;
+      }
+
+      .connector-state.is-needed {
+        color: var(--color-text-secondary);
+      }
+
+      .connector-details,
+      .connector-custom-panel,
+      .connector-mcp-panel {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+        min-height: 0;
+        padding: 18px;
+        border: 1px solid color-mix(in srgb, var(--color-border) 76%, transparent);
+        border-radius: 18px;
+        background:
+          radial-gradient(circle at top right, rgba(143, 152, 255, 0.12), transparent 42%),
+          color-mix(in srgb, var(--color-panel) 84%, black 16%);
+      }
+
+      .connector-details {
+        max-height: min(620px, calc(100vh - 300px));
+        overflow: auto;
+      }
+
+      .connector-details-head {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr);
+        align-items: center;
+        gap: 14px;
+      }
+
+      .connector-details h2,
+      .connector-custom-copy h2 {
+        margin: 0 0 5px;
+        font-size: 1.3rem;
+        line-height: 1.15;
+        letter-spacing: 0;
+      }
+
+      .connector-details p,
+      .connector-custom-copy p {
+        margin: 0;
+        color: var(--color-text-secondary);
+        font-size: 0.9rem;
+        line-height: 1.45;
+      }
+
+      .connector-status-line {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 12px 14px;
+        border: 1px solid color-mix(in srgb, var(--color-border) 70%, transparent);
+        border-radius: 12px;
+        background: rgba(0, 0, 0, 0.16);
+      }
+
+      .connector-status-line span {
+        color: var(--color-text-secondary);
+        font-weight: 760;
+      }
+
+      .connector-status-line strong {
+        font-size: 0.9rem;
+      }
+
+      .connector-status-line strong.is-ready { color: #8cf2b1; }
+      .connector-status-line strong.is-available { color: #aeb4ff; }
+      .connector-status-line strong.is-needed { color: #f4c77c; }
+
+      .connector-connect,
+      .connector-save,
+      .connector-secondary {
+        appearance: none;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        min-height: 42px;
+        border: 0;
+        border-radius: 12px;
+        font: inherit;
+        font-weight: 820;
+        cursor: pointer;
+      }
+
+      .connector-connect,
+      .connector-save {
+        background: #f5f6fa;
+        color: #090a0c;
+      }
+
+      .connector-secondary {
+        padding: 0 14px;
+        border: 1px solid color-mix(in srgb, var(--color-border) 75%, transparent);
+        background: rgba(255, 255, 255, 0.04);
+        color: var(--color-text);
+      }
+
+      .connector-connect:disabled,
+      .connector-save:disabled {
+        cursor: default;
+        opacity: 0.7;
+      }
+
+      .connector-key-panel {
+        display: grid;
+        gap: 10px;
+        padding: 14px;
+        border: 1px solid color-mix(in srgb, #8f98ff 34%, var(--color-border));
+        border-radius: 14px;
+        background: rgba(143, 152, 255, 0.07);
+      }
+
+      .connector-key-title {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        font-weight: 820;
+      }
+
+      .connector-key-panel input,
+      .connector-custom-form input {
+        width: 100%;
+        min-width: 0;
+        height: 42px;
+        box-sizing: border-box;
+        border: 1px solid color-mix(in srgb, var(--color-border) 80%, transparent);
+        border-radius: 10px;
+        outline: 0;
+        background: rgba(0, 0, 0, 0.22);
+        color: var(--color-text);
+        font: inherit;
+        padding: 0 12px;
+      }
+
+      .connector-key-actions {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 8px;
+      }
+
+      .connector-oauth-note {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr);
+        align-items: start;
+        gap: 9px;
+        padding: 10px 12px;
+        border: 1px solid color-mix(in srgb, #8f98ff 28%, var(--color-border));
+        border-radius: 12px;
+        background: rgba(143, 152, 255, 0.07);
+        color: var(--color-text-secondary);
+        font-size: 0.84rem;
+        line-height: 1.4;
+      }
+
+      .connector-oauth-note .material-symbols-outlined {
+        color: #aeb4ff;
+        font-size: 1.05rem;
+      }
+
+      .connector-detail-section {
+        display: grid;
+        gap: 9px;
+      }
+
+      .connector-detail-section h3 {
+        margin: 0;
+        font-size: 0.95rem;
+        letter-spacing: 0;
+      }
+
+      .connector-chip-row,
+      .connector-prompt {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr);
+        gap: 9px;
+        align-items: start;
+        padding: 10px 12px;
+        border: 1px solid color-mix(in srgb, var(--color-border) 68%, transparent);
+        border-radius: 12px;
+        background: rgba(0, 0, 0, 0.16);
+        color: var(--color-text-secondary);
+        font-size: 0.86rem;
+        line-height: 1.4;
+      }
+
+      .connector-chip-row .material-symbols-outlined,
+      .connector-prompt .material-symbols-outlined {
+        font-size: 18px;
+        color: #aeb4ff;
+      }
+
+      .connectors-alert {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr);
+        align-items: start;
+        gap: 9px;
+        padding: 11px 13px;
+        border: 1px solid color-mix(in srgb, #8f98ff 30%, var(--color-border));
+        border-radius: 12px;
+        background: rgba(143, 152, 255, 0.08);
+        color: var(--color-text-secondary);
+        font-size: 0.88rem;
+        line-height: 1.4;
+      }
+
+      .connectors-alert.success {
+        border-color: color-mix(in srgb, #22c55e 38%, var(--color-border));
+        background: rgba(34, 197, 94, 0.08);
+      }
+
+      .connectors-alert.error {
+        border-color: color-mix(in srgb, #ef4444 38%, var(--color-border));
+        background: rgba(239, 68, 68, 0.08);
+      }
+
+      .connector-custom-panel,
+      .connector-mcp-panel {
+        min-height: 440px;
+      }
+
+      .connector-custom-form {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 14px;
+      }
+
+      .connector-custom-form label {
+        display: grid;
+        gap: 7px;
+        color: var(--color-text-secondary);
+        font-size: 0.82rem;
+        font-weight: 760;
+      }
+
+      .connector-custom-form .connector-connect {
+        grid-column: 1 / -1;
+        justify-self: start;
+        padding: 0 18px;
+      }
+
+      .mcp-list {
+        max-height: none;
+        overflow: visible;
+      }
+
+      .connector-empty {
+        grid-column: 1 / -1;
+        padding: 22px;
+        border: 1px dashed color-mix(in srgb, var(--color-border) 75%, transparent);
+        border-radius: 14px;
+        color: var(--color-text-secondary);
+        text-align: center;
+      }
+
+      @media (max-width: 920px) {
+        .connectors-layout,
+        .connector-custom-form {
+          grid-template-columns: minmax(0, 1fr);
+        }
+
+        .connectors-grid {
+          grid-template-columns: minmax(0, 1fr);
+          max-height: none;
+        }
+
+        .connector-details {
+          max-height: none;
+        }
+      }
+    </style>
+  </body>
+</html>

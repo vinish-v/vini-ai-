@@ -1,0 +1,42 @@
+<script type="module">
+  import { store as pluginSettingsStore } from "/components/plugins/plugin-settings-store.js";
+
+  globalThis.openViniVoiceModelSettings = async () => {
+    await pluginSettingsStore.openConfig("_vini_voice");
+  };
+</script>
+
+<div x-data>
+  <div class="voice-plugin-card vini-voice-card">
+    <div class="voice-plugin-card-header">
+      <div>
+        <div class="voice-plugin-title">Vini Voice Conversation</div>
+        <div class="voice-plugin-description">
+          Configure the fast model used only for live voice conversation. Main chat and task models stay unchanged.
+        </div>
+      </div>
+      <span class="voice-plugin-badge is-ok">Fast lane</span>
+    </div>
+
+    <div class="voice-plugin-meta">
+      <div class="voice-plugin-meta-row">
+        <span>Default provider</span>
+        <code>Groq</code>
+      </div>
+      <div class="voice-plugin-meta-row">
+        <span>Default model</span>
+        <code>llama-3.3-70b-versatile</code>
+      </div>
+      <div class="voice-plugin-meta-row">
+        <span>Reply cap</span>
+        <code>128 tokens</code>
+      </div>
+    </div>
+
+    <div class="voice-plugin-actions">
+      <button class="btn btn-field" @click="globalThis.openViniVoiceModelSettings?.()">
+        Configure Voice Model
+      </button>
+    </div>
+  </div>
+</div>

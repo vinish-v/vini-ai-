@@ -1,0 +1,11 @@
+agent-zero/.git
+agent-zero/logs
+agent-zero/tmp
+agent-zero/__pycache__
+agent-zero/**/__pycache__
+agent-zero/.venv
+agent-zero/venv
+agent-zero/usr/workdir
+agent-zero/usr/settings.json
+agent-zero/usr/**/*.log
+

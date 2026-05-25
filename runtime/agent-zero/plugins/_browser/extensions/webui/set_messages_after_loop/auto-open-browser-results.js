@@ -1,0 +1,259 @@
+import { store as browserStore } from "/plugins/_browser/webui/browser-store.js";
+import { handleUrlIntent, open as openSurface } from "/js/surfaces.js";
+
+const AUTO_OPEN_WINDOW_MS = 10 * 60 * 1000;
+const SEARCH_RESULT_PREVIEW_LIMIT = 3;
+const syncedBrowserCanvases = new Set();
+const syncedSearchResults = new Set();
+
+export default async function syncBrowserResultsIntoOpenCanvas(context) {
+  if (!context?.results?.length) return;
+
+  for (const { args } of context.results) {
+    const payload = getToolResultPayload(args);
+    const toolName = getToolName(payload);
+    if (toolName === "search_engine") {
+      syncSearchResultsIntoBrowser(args, payload);
+      continue;
+    }
+    if (context.historyEmpty) continue;
+    if (toolName !== "browser") continue;
+
+    const result = parseMaybeJson(payload.tool_result) || {};
+    if (!shouldSyncOpenBrowserCanvas(args, payload, result)) continue;
+
+    const browserId = getBrowserId(payload, result);
+    const contextId = getBrowserContextId(payload, result);
+    const key = [
+      args?.id || "",
+      contextId || "",
+      browserId || "",
+      result.currentUrl || result.state?.currentUrl || payload.url || "",
+    ].join(":");
+    const persistedKey = `a0.browser.synced.${key}`;
+    if (hasOpened(key, persistedKey)) continue;
+
+    requestAnimationFrame(async () => {
+      if (!(await browserAllowsToolAutofocus())) return;
+      void syncOpenBrowserCanvas({ browserId, contextId, source: "tool-result-live-sync" });
+    });
+  }
+}
+
+function syncSearchResultsIntoBrowser(args = {}, payload = {}) {
+  if (!isFresh(args.timestamp, payload.last_modified)) return;
+  const urls = extractSearchResultUrls(args, payload);
+  if (!urls.length) return;
+
+  const key = [
+    args?.id || "",
+    urls.join("|"),
+  ].join(":");
+  const persistedKey = `a0.search.browser.synced.${key}`;
+  if (hasSyncedSearchResult(key, persistedKey)) return;
+
+  requestAnimationFrame(async () => {
+    if (!(await browserAllowsToolAutofocus())) return;
+    for (const url of urls) {
+      await handleUrlIntent({ url, source: "search-result-sync" });
+    }
+  });
+}
+
+function getToolResultPayload(args = {}) {
+  const topLevelPayload = pickPayloadFields(args);
+  const contentPayload = parseMaybeJson(args.content);
+  const kvpsPayload = parseMaybeJson(args.kvps);
+  return {
+    ...topLevelPayload,
+    ...(contentPayload || {}),
+    ...(kvpsPayload || {}),
+  };
+}
+
+function pickPayloadFields(args = {}) {
+  const payload = {};
+  for (const key of [
+    "_tool_name",
+    "tool_name",
+    "tool_result",
+    "action",
+    "browser_id",
+    "browserId",
+    "context_id",
+    "contextId",
+    "url",
+    "last_modified",
+  ]) {
+    if (args[key] != null && args[key] !== "") payload[key] = args[key];
+  }
+  return payload;
+}
+
+function getToolName(payload = {}) {
+  return String(payload._tool_name || payload.tool_name || "").trim();
+}
+
+function parseMaybeJson(value) {
+  if (!value) return null;
+  if (typeof value === "object") return value;
+  if (typeof value !== "string") return null;
+
+  const trimmed = value.trim();
+  if (!trimmed.startsWith("{")) return null;
+  try {
+    const parsed = JSON.parse(trimmed);
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function extractSearchResultUrls(args = {}, payload = {}) {
+  const raw = [
+    payload.tool_result,
+    args.content,
+    typeof args.kvps === "string" ? args.kvps : "",
+  ].filter(Boolean).join("\n");
+  const matches = raw.match(/https?:\/\/[^\s<>"')\]]+/g) || [];
+  const urls = [];
+  const seen = new Set();
+  for (const match of matches) {
+    const url = normalizeSearchResultUrl(match);
+    if (!url || seen.has(url)) continue;
+    urls.push(url);
+    seen.add(url);
+    if (urls.length >= SEARCH_RESULT_PREVIEW_LIMIT) break;
+  }
+  return urls;
+}
+
+function normalizeSearchResultUrl(value = "") {
+  const trimmed = String(value || "").trim().replace(/[.,;:!?]+$/, "");
+  try {
+    const parsed = new URL(trimmed);
+    if (!["http:", "https:"].includes(parsed.protocol) || !parsed.hostname) return "";
+    return parsed.href;
+  } catch {
+    return "";
+  }
+}
+
+const LIVE_VIEW_ACTIONS = new Set([
+  "open",
+  "navigate",
+  "set_active",
+  "setactive",
+  "activate",
+  "focus",
+  "click",
+  "type",
+  "submit",
+  "type_submit",
+  "scroll",
+  "hover",
+  "double_click",
+  "right_click",
+  "drag",
+  "wheel",
+  "keyboard",
+  "key_chord",
+  "select_option",
+  "set_checked",
+  "upload_file",
+  "mouse",
+  "clipboard",
+  "back",
+  "forward",
+  "reload",
+]);
+
+function shouldSyncOpenBrowserCanvas(args = {}, payload = {}, result = {}) {
+  if (!isFresh(args.timestamp, payload.last_modified || result.last_modified)) return false;
+  const action = String(payload.action || "").trim().toLowerCase().replace("-", "_");
+  if (!LIVE_VIEW_ACTIONS.has(action)) return false;
+  return Boolean(getBrowserId(payload, result) || result.currentUrl || result.state?.currentUrl);
+}
+
+function getBrowserId(payload = {}, result = {}) {
+  return (
+    result.id
+    || result.browser_id
+    || result.state?.id
+    || result.last_interacted_browser_id
+    || payload.browser_id
+    || payload.browserId
+    || null
+  );
+}
+
+function getBrowserContextId(payload = {}, result = {}) {
+  return (
+    result.context_id
+    || result.state?.context_id
+    || payload.context_id
+    || payload.contextId
+    || null
+  );
+}
+
+function isFresh(timestamp, fallbackTimestamp) {
+  const messageMs = toMs(timestamp) || toMs(fallbackTimestamp);
+  if (!messageMs) return true;
+  return Math.abs(Date.now() - messageMs) <= AUTO_OPEN_WINDOW_MS;
+}
+
+function toMs(value) {
+  if (value == null || value === "") return 0;
+
+  const numeric = Number(value);
+  if (Number.isFinite(numeric) && numeric > 0) {
+    return numeric > 10_000_000_000 ? numeric : numeric * 1000;
+  }
+
+  const parsed = Date.parse(String(value));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function hasOpened(key, persistedKey) {
+  if (syncedBrowserCanvases.has(key)) return true;
+  syncedBrowserCanvases.add(key);
+
+  try {
+    if (sessionStorage.getItem(persistedKey)) return true;
+    sessionStorage.setItem(persistedKey, "1");
+  } catch {
+    // Best-effort persistence; the in-memory guard still prevents repeat syncs.
+  }
+
+  return false;
+}
+
+function hasSyncedSearchResult(key, persistedKey) {
+  if (syncedSearchResults.has(key)) return true;
+  syncedSearchResults.add(key);
+
+  try {
+    if (sessionStorage.getItem(persistedKey)) return true;
+    sessionStorage.setItem(persistedKey, "1");
+  } catch {
+    // Best-effort persistence; the in-memory guard still prevents repeat syncs.
+  }
+
+  return false;
+}
+
+async function syncOpenBrowserCanvas(payload = {}) {
+  await openSurface("browser", payload);
+}
+
+async function browserAllowsToolAutofocus() {
+  try {
+    if (browserStore.allowsToolAutofocus) {
+      return await browserStore.allowsToolAutofocus();
+    }
+  } catch (error) {
+    console.warn("Browser autofocus setting could not be checked", error);
+  }
+  return true;
+}

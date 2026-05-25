@@ -1,0 +1,133 @@
+<link rel="stylesheet" href="/plugins/_vini_app_builder/webui/builder.css">
+<script type="module">
+  import { store } from "/plugins/_vini_app_builder/webui/builder-store.js";
+</script>
+
+<div class="vini-builder-panel" x-data x-init="$store.viniAppBuilder.onOpen()">
+  <section class="vini-builder-sidebar">
+    <header class="vini-builder-header">
+      <div>
+        <div class="vini-builder-kicker">Vini Computer</div>
+        <h2>Build</h2>
+      </div>
+      <button type="button" class="vini-builder-icon-btn" title="Refresh projects" aria-label="Refresh projects"
+        :disabled="$store.viniAppBuilder.loading" @click="$store.viniAppBuilder.refresh()">
+        <span class="material-symbols-outlined"
+          :class="{ spinning: $store.viniAppBuilder.loading }"
+          x-text="$store.viniAppBuilder.loading ? 'progress_activity' : 'refresh'"></span>
+      </button>
+    </header>
+
+    <div class="vini-builder-composer">
+      <input type="text" x-model="$store.viniAppBuilder.newProjectName" placeholder="Project name" />
+      <textarea rows="5" x-model="$store.viniAppBuilder.prompt"
+        placeholder="Build a portfolio for a product designer with a dark visual system, work gallery, contact form, and smooth sections."></textarea>
+      <div class="vini-builder-actions">
+        <button type="button" class="vini-builder-primary" :disabled="$store.viniAppBuilder.loading"
+          @click="$store.viniAppBuilder.sendToVini()">
+          <span class="material-symbols-outlined">smart_toy</span>
+          <span>Ask Vini</span>
+        </button>
+        <button type="button" class="vini-builder-secondary" :disabled="$store.viniAppBuilder.loading"
+          @click="$store.viniAppBuilder.createProject()">
+          <span class="material-symbols-outlined">create_new_folder</span>
+          <span>Create</span>
+        </button>
+      </div>
+    </div>
+
+    <div class="vini-builder-projects">
+      <template x-if="!$store.viniAppBuilder.projects.length">
+        <div class="vini-builder-empty">No app projects yet.</div>
+      </template>
+      <template x-for="project in $store.viniAppBuilder.projects" :key="project.project_id">
+        <button type="button" class="vini-builder-project"
+          :class="{ 'is-active': project.project_id === $store.viniAppBuilder.activeProjectId }"
+          @click="$store.viniAppBuilder.selectProject(project.project_id)">
+          <span class="vini-builder-project-title" x-text="project.name || project.project_id"></span>
+          <span class="vini-builder-project-meta">
+            <span class="vini-builder-dot" :class="$store.viniAppBuilder.statusClass(project)"></span>
+            <span x-text="project.status || 'created'"></span>
+          </span>
+        </button>
+      </template>
+    </div>
+  </section>
+
+  <main class="vini-builder-main">
+    <div class="vini-builder-toolbar">
+      <div class="vini-builder-active">
+        <span class="material-symbols-outlined">terminal</span>
+        <span x-text="$store.viniAppBuilder.activeTitle()"></span>
+      </div>
+      <div class="vini-builder-actionbar">
+        <button type="button" title="Run install and build" :disabled="!$store.viniAppBuilder.activeProjectId || $store.viniAppBuilder.loading"
+          @click="$store.viniAppBuilder.runBuild()">
+          <span class="material-symbols-outlined">construction</span>
+          <span>Build</span>
+        </button>
+        <button type="button" title="Start live preview" :disabled="!$store.viniAppBuilder.activeProjectId || $store.viniAppBuilder.loading"
+          @click="$store.viniAppBuilder.startPreview()">
+          <span class="material-symbols-outlined">play_circle</span>
+          <span>Preview</span>
+        </button>
+        <button type="button" title="Export ZIP" :disabled="!$store.viniAppBuilder.activeProjectId || $store.viniAppBuilder.loading"
+          @click="$store.viniAppBuilder.exportProject()">
+          <span class="material-symbols-outlined">archive</span>
+          <span>Export ZIP</span>
+        </button>
+      </div>
+    </div>
+
+    <div class="vini-builder-status" x-show="$store.viniAppBuilder.loading || $store.viniAppBuilder.error || $store.viniAppBuilder.message">
+      <span class="material-symbols-outlined spinning" x-show="$store.viniAppBuilder.loading">progress_activity</span>
+      <span class="material-symbols-outlined" x-show="$store.viniAppBuilder.error">error</span>
+      <span class="material-symbols-outlined" x-show="!$store.viniAppBuilder.loading && !$store.viniAppBuilder.error && $store.viniAppBuilder.message">check_circle</span>
+      <span x-text="$store.viniAppBuilder.error || $store.viniAppBuilder.actionLabel || $store.viniAppBuilder.message"></span>
+    </div>
+
+    <div class="vini-builder-grid">
+      <section class="vini-builder-preview">
+        <div class="vini-builder-section-head">
+          <span>Live Preview</span>
+          <a x-show="$store.viniAppBuilder.activeProject?.preview_url"
+            :href="$store.viniAppBuilder.activeProject?.preview_url" target="_blank" rel="noopener">Open</a>
+        </div>
+        <template x-if="$store.viniAppBuilder.activeProject?.preview_url">
+          <iframe title="Vini app preview" :src="$store.viniAppBuilder.previewUrl()"></iframe>
+        </template>
+        <template x-if="!$store.viniAppBuilder.activeProject?.preview_url">
+          <div class="vini-builder-placeholder">
+            <span class="material-symbols-outlined">web_asset</span>
+            <span>Preview is not running.</span>
+          </div>
+        </template>
+      </section>
+
+      <aside class="vini-builder-inspector">
+        <section>
+          <div class="vini-builder-section-head">
+            <span>Project Files</span>
+            <span x-text="$store.viniAppBuilder.files.length"></span>
+          </div>
+          <div class="vini-builder-files">
+            <template x-for="file in $store.viniAppBuilder.files" :key="file.path">
+              <div class="vini-builder-file" :title="file.path">
+                <span class="material-symbols-outlined" x-text="file.kind === 'directory' ? 'folder' : 'description'"></span>
+                <span x-text="file.path"></span>
+              </div>
+            </template>
+          </div>
+        </section>
+
+        <section>
+          <div class="vini-builder-section-head">
+            <span>Proof Log</span>
+            <span x-text="$store.viniAppBuilder.activeProject?.status || ''"></span>
+          </div>
+          <pre class="vini-builder-log" x-text="$store.viniAppBuilder.log || 'No command output yet.'"></pre>
+        </section>
+      </aside>
+    </div>
+  </main>
+</div>

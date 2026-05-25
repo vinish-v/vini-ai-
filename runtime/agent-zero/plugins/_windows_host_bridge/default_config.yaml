@@ -1,0 +1,4 @@
+enabled: true
+bridge_url: ""
+request_timeout_seconds: 120
+max_response_chars: 12000

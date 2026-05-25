@@ -1,0 +1,9 @@
+name: _vini_voice
+title: Vini Voice
+description: Low-latency Vini AI speech conversation runtime with server-side VAD.
+version: 1.0.0
+always_enabled: false
+settings_sections:
+  - agent
+per_project_config: false
+per_agent_config: false

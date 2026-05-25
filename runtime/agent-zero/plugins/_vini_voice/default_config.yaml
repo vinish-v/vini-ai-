@@ -1,0 +1,16 @@
+vad_aggressiveness: 2
+min_voiced_ms: 100
+end_silence_ms: 360
+max_utterance_ms: 12000
+pre_roll_ms: 220
+
+voice_model:
+  enabled: false
+  provider: groq
+  name: llama-3.3-70b-versatile
+  api_base: ""
+  ctx_length: 8192
+  vision: false
+  kwargs:
+    max_tokens: 128
+    temperature: 0.35

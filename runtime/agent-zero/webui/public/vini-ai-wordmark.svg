@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 244 48" role="img" aria-label="Vini AI">
+  <rect width="48" height="48" rx="10" fill="#f5f5f5"/>
+  <path d="M11 11h8l6 21 6-21h7L29 37h-8L11 11Z" fill="#050505"/>
+  <path d="M35 32h4v5h-4z" fill="#050505"/>
+  <path d="M67 11h8l9 26 9-26h8L88 37h-8L67 11Zm41 0h7v26h-7V11Zm15 0h7l14 15V11h7v26h-6.5L130 21.5V37h-7V11Zm37 0h7v26h-7V11Zm26 0h8l12 26h-7l-2-5h-14l-2 5h-7l12-26Zm-1 16h9l-4.5-10-4.5 10Zm28-16h7v26h-7V11Z" fill="#f5f5f5"/>
+</svg>
+

@@ -1,0 +1,127 @@
+<html>
+<head>
+  <script type="module">
+    import { store as sidebarStore } from "/components/sidebar/sidebar-store.js";
+  </script>
+</head>
+<body>
+  <div
+    class="sidebar-header-stack"
+    x-data
+  >
+    <div
+      id="sidebar-header-panel"
+      class="sidebar-header-panel"
+      x-ref="headerPanel"
+      :class="{ 'sidebar-header-panel-open': $store.sidebar.headOpen() }"
+    >
+      <div class="icons-section" id="hide-button">
+        <button id="toggle-sidebar" class="toggle-sidebar-button" @click="$store.sidebar.toggle()" aria-label="Toggle Sidebar" aria-expanded="false">
+          <span class="material-symbols-outlined" aria-hidden="true" x-text="$store.sidebar.isOpen ? 'left_panel_close' : 'left_panel_open'"></span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+
+  <style>
+    :root {
+      --header-panel-collapsed-width: 3.6rem;
+    }
+
+    .sidebar-header-panel {
+      position: fixed;
+      top: 1rem;
+      left: 1rem;
+      width: var(--header-panel-collapsed-width);
+      height: var(--header-panel-collapsed-width);
+      box-sizing: border-box;
+      z-index: 1004;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+      background:
+        linear-gradient(180deg, rgba(255,255,255,0.06), transparent 60%),
+        rgba(12, 13, 17, 0.94);
+      border: 1px solid var(--vini-border, var(--color-border));
+      border-radius: 15px;
+      box-shadow: 0 14px 34px rgba(0, 0, 0, 0.28);
+      backdrop-filter: blur(20px);
+      overflow: hidden;
+      transition: transform var(--transition-speed),
+                  background-color var(--transition-speed),
+                  border-color var(--transition-speed), 
+                  box-shadow var(--transition-speed);
+    }
+
+    #hide-button {
+      display: flex;
+      gap: var(--spacing-xs);
+      width: max-content;
+      margin-top: 0;
+    }
+
+    .sidebar-header-panel .toggle-sidebar-button {
+      background-color: transparent;
+      border: none;
+      border-radius: 8px;
+      box-shadow: none;
+      flex: 0 0 auto;
+    }
+
+    .toggle-sidebar-button {
+      color: var(--color-text);
+      opacity: 0.88;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 2.55rem;
+      height: 2.55rem;
+      padding: var(--spacing-xs);
+      transition: all var(--transition-speed) ease-in-out;
+    }
+
+    .toggle-sidebar-button:hover {
+      background-color: rgba(255,255,255,0.07);
+      opacity: 1;
+      box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-primary) 18%, transparent);
+    }
+
+    .toggle-sidebar-button:active {
+      opacity: 0.5;
+      box-shadow: inset 0 0 0 999px rgba(0, 0, 0, 0.06);
+    }
+
+    .toggle-sidebar-button .material-symbols-outlined {
+      font-size: 23px;
+      transition: all var(--transition-speed) ease;
+    }
+
+    .toggle-sidebar-button:active .material-symbols-outlined {
+      transform: scaleY(0.8);
+    }
+
+    @media (max-width: 768px) {
+      .sidebar-header-panel {
+        transition: all 0.3s ease;
+      }
+    }
+    
+    /* Light mode fixes */
+    .light-mode .sidebar-header-panel {
+      background-color: var(--color-background);
+      color: #333333;
+    }
+
+    .light-mode .sidebar-header-panel .toggle-sidebar-button:hover {
+      background-color: var(--color-background-hover);
+    }
+
+    .light-mode .sidebar-header-panel .toggle-sidebar-button:active {
+      background-color: var(--color-background-hover);
+    }
+  </style>
+</body>
+</html>

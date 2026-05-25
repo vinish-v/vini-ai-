@@ -1,0 +1,6 @@
+engine: supertonic
+voice: am_puck,am_onyx
+speed: 1.16
+supertonic_voice: F1
+supertonic_steps: 6
+supertonic_language: en
