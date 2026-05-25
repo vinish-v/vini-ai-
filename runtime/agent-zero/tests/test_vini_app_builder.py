@@ -1,12 +1,51 @@
 from __future__ import annotations
 
 import json
+import importlib
+import sys
+import types
 import zipfile
+from pathlib import Path
 
-from plugins._vini_app_builder.helpers import builder
+
+import pytest
 
 
-def configure_tmp_builder(monkeypatch, tmp_path):
+def install_builder_import_stubs(monkeypatch):
+    flask_stub = types.ModuleType("flask")
+    flask_stub.Response = object
+    flask_stub.request = types.SimpleNamespace(query_string=b"", method="GET")
+    monkeypatch.setitem(sys.modules, "flask", flask_stub)
+
+    helpers_stub = types.ModuleType("helpers")
+    files_stub = types.ModuleType("helpers.files")
+    plugins_stub = types.ModuleType("helpers.plugins")
+    files_stub.get_abs_path = lambda *parts: str(Path.cwd().joinpath(*parts))
+    plugins_stub.get_plugin_config = lambda *_args, **_kwargs: {}
+    helpers_stub.files = files_stub
+    helpers_stub.plugins = plugins_stub
+    monkeypatch.setitem(sys.modules, "helpers", helpers_stub)
+    monkeypatch.setitem(sys.modules, "helpers.files", files_stub)
+    monkeypatch.setitem(sys.modules, "helpers.plugins", plugins_stub)
+
+
+@pytest.fixture()
+def builder_module(monkeypatch):
+    try:
+        return importlib.import_module("plugins._vini_app_builder.helpers.builder")
+    except ModuleNotFoundError as exc:
+        if exc.name not in {"flask", "simpleeval"}:
+            raise
+        install_builder_import_stubs(monkeypatch)
+        for name in [
+            "plugins._vini_app_builder.helpers",
+            "plugins._vini_app_builder.helpers.builder",
+        ]:
+            sys.modules.pop(name, None)
+        return importlib.import_module("plugins._vini_app_builder.helpers.builder")
+
+
+def configure_tmp_builder(builder, monkeypatch, tmp_path):
     config = {
         "enabled": True,
         "projects_root": str(tmp_path / "projects"),
@@ -20,8 +59,9 @@ def configure_tmp_builder(monkeypatch, tmp_path):
     return config
 
 
-def test_create_project_writes_real_vite_files_and_manifest(monkeypatch, tmp_path):
-    configure_tmp_builder(monkeypatch, tmp_path)
+def test_create_project_writes_real_vite_files_and_manifest(builder_module, monkeypatch, tmp_path):
+    builder = builder_module
+    configure_tmp_builder(builder, monkeypatch, tmp_path)
 
     result = builder.create_project(
         name="Revenue Ops Dashboard",
@@ -40,8 +80,9 @@ def test_create_project_writes_real_vite_files_and_manifest(monkeypatch, tmp_pat
     assert "vite" in (project_dir / "package.json").read_text(encoding="utf-8")
 
 
-def test_write_file_is_project_scoped_and_export_skips_runtime_artifacts(monkeypatch, tmp_path):
-    configure_tmp_builder(monkeypatch, tmp_path)
+def test_write_file_is_project_scoped_and_export_skips_runtime_artifacts(builder_module, monkeypatch, tmp_path):
+    builder = builder_module
+    configure_tmp_builder(builder, monkeypatch, tmp_path)
     project = builder.create_project(name="Export Site", prompt="Export proof")["project"]
     project_id = project["project_id"]
 
@@ -60,7 +101,7 @@ def test_write_file_is_project_scoped_and_export_skips_runtime_artifacts(monkeyp
     with zipfile.ZipFile(export_result["export_path"]) as archive:
         names = set(archive.namelist())
 
-    assert "src/extra.ts" in names
-    assert builder.MANIFEST_NAME in names
+    assert f"{project_id}/src/extra.ts" in names
+    assert f"{project_id}/{builder.MANIFEST_NAME}" in names
     assert "node_modules/ignored.txt" not in names
     assert builder.LOG_NAME not in names

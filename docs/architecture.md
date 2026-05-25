@@ -29,6 +29,7 @@ Vini AI is a Windows desktop shell around the real Vini AI runtime.
 - Fresh browser and search actions auto-open the live Browser surface when browser autofocus is enabled, so the user sees work as it happens instead of finding screenshots after the task.
 - The live Browser surface includes stream status, measured frame cadence, point overlays, and a compact action feed backed by runtime events.
 - Full Windows desktop control remains gated behind the scoped host bridge and computer-use backend. If that backend is not armed or connected, Vini AI must report that setup gap instead of pretending OS-level control is available.
+- The Build surface is a Manus-style local website-builder surface inside Vini Computer, not an IDE. It uses the runtime `_vini_app_builder` plugin to create projects under `/a0/usr/projects`, run real install/build/typecheck/dev-server commands, proxy live previews through `/vini-preview/<projectId>/`, record proof in `vini-project.json` and `vini-builder.log`, and export local ZIPs. Details are in [vini-app-builder.md](./vini-app-builder.md).
 
 ## Default Runtime Contract
 
