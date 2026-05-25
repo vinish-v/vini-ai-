@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/vini-ai-logo.png" alt="Vini AI" width="420">
+  <img src="docs/assets/vini-ai-github-banner.png" alt="Vini AI" width="100%">
 </p>
 
 # Vini AI
