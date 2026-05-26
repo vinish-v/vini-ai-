@@ -68,6 +68,9 @@ class Memory:
     @staticmethod
     async def get(agent: Agent):
         memory_subdir = get_agent_memory_subdir(agent)
+        if agent.get_data("vini_voice_skip_memory_once"):
+            return Memory(db=None, memory_subdir=memory_subdir, disabled=True)
+
         if Memory.index.get(memory_subdir) is None:
             log_item = agent.context.log.log(
                 type="util",
@@ -250,11 +253,13 @@ class Memory:
 
     def __init__(
         self,
-        db: MyFaiss,
+        db: MyFaiss | None,
         memory_subdir: str,
+        disabled: bool = False,
     ):
         self.db = db
         self.memory_subdir = memory_subdir
+        self.disabled = disabled
 
     async def preload_knowledge(
         self, log_item: LogItem | None, kn_dirs: list[str], memory_subdir: str
@@ -335,11 +340,15 @@ class Memory:
         return index
 
     def get_document_by_id(self, id: str) -> Document | None:
+        if self.disabled or self.db is None:
+            return None
         return self.db.get_by_ids(id)[0]
 
     async def search_similarity_threshold(
         self, query: str, limit: int, threshold: float, filter: str = ""
     ):
+        if self.disabled or self.db is None:
+            return []
         comparator = Memory._get_comparator(filter) if filter else None
 
         return await self.db.asearch(
@@ -353,6 +362,8 @@ class Memory:
     async def search_similarity_threshold_with_scores(
         self, query: str, limit: int, threshold: float, filter: str = ""
     ) -> list[tuple[Document, float]]:
+        if self.disabled or self.db is None:
+            return []
         comparator = Memory._get_comparator(filter) if filter else None
 
         return await self.db.asimilarity_search_with_relevance_scores(
@@ -371,6 +382,8 @@ class Memory:
         include_exact: bool = False,
         cascade: bool = False,
     ):
+        if self.disabled or self.db is None:
+            return []
         k = 100
         tot = 0
         removed = []
@@ -425,6 +438,8 @@ class Memory:
     async def delete_documents_by_ids(
         self, ids: list[str], *, cascade: bool = False, filter: str = ""
     ):
+        if self.disabled or self.db is None:
+            return []
         # aget_by_ids is not yet implemented in faiss, need to do a workaround
         rem_docs = await self.db.aget_by_ids(
             ids
@@ -448,11 +463,15 @@ class Memory:
         return rem_docs
 
     async def insert_text(self, text, metadata: dict = {}):
+        if self.disabled or self.db is None:
+            return ""
         doc = Document(text, metadata=metadata)
         ids = await self.insert_documents([doc])
         return ids[0]
 
     async def insert_documents(self, docs: list[Document]):
+        if self.disabled or self.db is None:
+            return []
         ids = [self._generate_doc_id() for _ in range(len(docs))]
         timestamp = self.get_timestamp()
 
@@ -468,6 +487,8 @@ class Memory:
         return ids
 
     async def update_documents(self, docs: list[Document]):
+        if self.disabled or self.db is None:
+            return []
         ids = [doc.metadata["id"] for doc in docs]
         await self.db.adelete(ids=ids)  # delete originals
         ins = await self.db.aadd_documents(documents=docs, ids=ids)  # add updated
@@ -475,6 +496,8 @@ class Memory:
         return ins
 
     def _save_db(self):
+        if self.disabled or self.db is None:
+            return
         Memory._save_db_file(self.db, self.memory_subdir)
 
     def _generate_doc_id(self):
