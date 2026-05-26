@@ -284,6 +284,42 @@
     return envVars;
   }
 
+  function fallbackForUnhandledChannel(channel) {
+    console.warn(`Vini Canvas optional Dyad IPC channel is not active in-shell: ${channel}`);
+    if (
+      channel.startsWith("list-") ||
+      channel.includes(":list-") ||
+      channel.endsWith(":list") ||
+      channel === "search-chats" ||
+      channel === "search-app-files" ||
+      channel === "check-problems" ||
+      channel === "get-context-paths" ||
+      channel === "mcp:list-tools"
+    ) {
+      return [];
+    }
+    if (
+      channel.startsWith("get-") ||
+      channel.includes(":get-") ||
+      channel === "check-ai-rules" ||
+      channel === "get-latest-security-review"
+    ) {
+      return null;
+    }
+    if (
+      channel.startsWith("check-") ||
+      channel.startsWith("is-") ||
+      channel.startsWith("does-")
+    ) {
+      return false;
+    }
+    return undefined;
+  }
+
+  function isMutationChannel(channel) {
+    return /^(add|apply|approve|cancel|change|checkout|cleanup|clear|copy|create|delete|discard|edit|execute|generate|git:|github:|import|install|migration:|move|neon:|open-|portal:|pro:|reject|rename|reset|respond|revert|save|select-|set-|supabase:|sync|update|upload|vercel:)/.test(channel);
+  }
+
   async function invoke(channel, input) {
     switch (channel) {
       case "get-user-settings": {
@@ -364,6 +400,27 @@
         const result = await canvasBackend("get_app_theme", input || {});
         return result.themeId || null;
       }
+      case "list-versions": {
+        const result = await canvasBackend("list_versions", input || {});
+        return result.versions || [];
+      }
+      case "get-current-branch": {
+        const result = await canvasBackend("get_current_branch", input || {});
+        return { branch: result.branch || "no-git" };
+      }
+      case "get-proposal": {
+        const result = await canvasBackend("get_proposal", input || {});
+        return result.proposal || null;
+      }
+      case "approve-proposal":
+        return {
+          success: false,
+          error: "Vini Canvas does not use Dyad proposal approval in the Vini AI shell yet.",
+          extraFiles: [],
+          warningMessages: [],
+        };
+      case "reject-proposal":
+        return undefined;
       case "delete-app":
         await canvasBackend("delete_app", input || {});
         return undefined;
@@ -522,7 +579,10 @@
         if (typeof input === "string" && input) window.open(input, "_blank", "noopener,noreferrer");
         return undefined;
       default:
-        throw new Error(`Vini Canvas has not connected Dyad IPC channel "${channel}" yet.`);
+        if (isMutationChannel(channel)) {
+          throw new Error(`Vini Canvas does not support Dyad IPC action "${channel}" in the Vini AI shell yet.`);
+        }
+        return fallbackForUnhandledChannel(channel);
     }
   }
 

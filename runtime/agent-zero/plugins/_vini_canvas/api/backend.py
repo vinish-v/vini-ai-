@@ -4,6 +4,7 @@ import json
 import math
 import re
 import shutil
+import subprocess
 import time
 from html import escape
 from datetime import datetime, timezone
@@ -108,6 +109,21 @@ def _files_for_project(project_id: str) -> list[str]:
 
 def _project_id_for_app(state: dict[str, Any], app_id: int) -> str:
     return str(_find_app(state, app_id)["project_id"])
+
+
+def _git_command(project_id: str, args: list[str]) -> subprocess.CompletedProcess[str]:
+    project_dir = builder._project_dir(project_id)
+    return subprocess.run(
+        ["git", *args],
+        cwd=str(project_dir),
+        capture_output=True,
+        text=True,
+        timeout=15,
+    )
+
+
+def _is_git_repo(project_id: str) -> bool:
+    return (builder._project_dir(project_id) / ".git").exists()
 
 
 def _stop_preview(project_id: str) -> dict[str, Any]:
@@ -540,6 +556,52 @@ def _handle(data: dict[str, Any]) -> dict[str, Any]:
     if action == "get_app_theme":
         app = _find_app(state, int(data.get("appId")))
         return {"ok": True, "themeId": app.get("themeId") or None}
+
+    if action == "list_versions":
+        app = _find_app(state, int(data.get("appId")))
+        project_id = str(app["project_id"])
+        if not _is_git_repo(project_id):
+            return {"ok": True, "versions": []}
+        result = _git_command(
+            project_id,
+            ["log", "--max-count=100000", "--pretty=format:%H%x00%s%x00%ct"],
+        )
+        if result.returncode != 0:
+            return {"ok": False, "error": result.stderr.strip() or "Unable to read Canvas git history."}
+        versions = []
+        for line in result.stdout.splitlines():
+            parts = line.split("\x00")
+            if len(parts) != 3:
+                continue
+            oid, message, timestamp = parts
+            try:
+                parsed_timestamp = int(timestamp)
+            except ValueError:
+                parsed_timestamp = 0
+            versions.append(
+                {
+                    "oid": oid,
+                    "message": message,
+                    "timestamp": parsed_timestamp,
+                    "dbTimestamp": None,
+                }
+            )
+        return {"ok": True, "versions": versions}
+
+    if action == "get_current_branch":
+        app = _find_app(state, int(data.get("appId")))
+        project_id = str(app["project_id"])
+        if not _is_git_repo(project_id):
+            return {"ok": True, "branch": "no-git"}
+        result = _git_command(project_id, ["branch", "--show-current"])
+        if result.returncode != 0:
+            return {"ok": False, "error": result.stderr.strip() or "Unable to read Canvas git branch."}
+        branch = result.stdout.strip() or "detached"
+        return {"ok": True, "branch": branch}
+
+    if action == "get_proposal":
+        _find_chat(state, int(data.get("chatId")))
+        return {"ok": True, "proposal": None}
 
     if action == "apply_app_template":
         app = _find_app(state, int(data.get("appId")))
