@@ -4,6 +4,7 @@ import json
 import math
 import re
 import shutil
+import subprocess
 import time
 from html import escape
 from datetime import datetime, timezone
@@ -108,6 +109,21 @@ def _files_for_project(project_id: str) -> list[str]:
 
 def _project_id_for_app(state: dict[str, Any], app_id: int) -> str:
     return str(_find_app(state, app_id)["project_id"])
+
+
+def _git_command(project_id: str, args: list[str]) -> subprocess.CompletedProcess[str]:
+    project_dir = builder._project_dir(project_id)
+    return subprocess.run(
+        ["git", *args],
+        cwd=str(project_dir),
+        capture_output=True,
+        text=True,
+        timeout=15,
+    )
+
+
+def _is_git_repo(project_id: str) -> bool:
+    return (builder._project_dir(project_id) / ".git").exists()
 
 
 def _stop_preview(project_id: str) -> dict[str, Any]:
@@ -522,6 +538,84 @@ def _handle(data: dict[str, Any]) -> dict[str, Any]:
 
     if action == "get_app":
         return {"ok": True, "app": _app_response(_find_app(state, int(data.get("appId"))), full=True)}
+
+    if action == "set_app_theme":
+        app = _find_app(state, int(data.get("appId")))
+        raw_theme_id = data.get("themeId")
+        theme_id = str(raw_theme_id).strip() if raw_theme_id is not None else None
+        if not theme_id:
+            theme_id = None
+        app["themeId"] = theme_id
+        app["updatedAt"] = _now()
+        manifest = builder._load_manifest(str(app["project_id"]))
+        manifest["canvas_theme_id"] = theme_id
+        builder._save_manifest(str(app["project_id"]), manifest)
+        _save_state(state)
+        return {"ok": True, "themeId": theme_id}
+
+    if action == "get_app_theme":
+        app = _find_app(state, int(data.get("appId")))
+        return {"ok": True, "themeId": app.get("themeId") or None}
+
+    if action == "list_versions":
+        app = _find_app(state, int(data.get("appId")))
+        project_id = str(app["project_id"])
+        if not _is_git_repo(project_id):
+            return {"ok": True, "versions": []}
+        result = _git_command(
+            project_id,
+            ["log", "--max-count=100000", "--pretty=format:%H%x00%s%x00%ct"],
+        )
+        if result.returncode != 0:
+            return {"ok": False, "error": result.stderr.strip() or "Unable to read Canvas git history."}
+        versions = []
+        for line in result.stdout.splitlines():
+            parts = line.split("\x00")
+            if len(parts) != 3:
+                continue
+            oid, message, timestamp = parts
+            try:
+                parsed_timestamp = int(timestamp)
+            except ValueError:
+                parsed_timestamp = 0
+            versions.append(
+                {
+                    "oid": oid,
+                    "message": message,
+                    "timestamp": parsed_timestamp,
+                    "dbTimestamp": None,
+                }
+            )
+        return {"ok": True, "versions": versions}
+
+    if action == "get_current_branch":
+        app = _find_app(state, int(data.get("appId")))
+        project_id = str(app["project_id"])
+        if not _is_git_repo(project_id):
+            return {"ok": True, "branch": "no-git"}
+        result = _git_command(project_id, ["branch", "--show-current"])
+        if result.returncode != 0:
+            return {"ok": False, "error": result.stderr.strip() or "Unable to read Canvas git branch."}
+        branch = result.stdout.strip() or "detached"
+        return {"ok": True, "branch": branch}
+
+    if action == "get_proposal":
+        _find_chat(state, int(data.get("chatId")))
+        return {"ok": True, "proposal": None}
+
+    if action == "apply_app_template":
+        app = _find_app(state, int(data.get("appId")))
+        template_id = str(data.get("templateId") or "react").strip()
+        supported_templates = {"react", "vite-react", "vite-react-ts", "default"}
+        if template_id not in supported_templates:
+            return {"ok": False, "error": f"Vini Canvas template is not available yet: {template_id}"}
+        app["templateId"] = template_id
+        app["updatedAt"] = _now()
+        manifest = builder._load_manifest(str(app["project_id"]))
+        manifest["canvas_template_id"] = template_id
+        builder._save_manifest(str(app["project_id"]), manifest)
+        _save_state(state)
+        return {"ok": True, "applied": False, "needsRestart": False}
 
     if action == "delete_app":
         app_id = int(data.get("appId"))
