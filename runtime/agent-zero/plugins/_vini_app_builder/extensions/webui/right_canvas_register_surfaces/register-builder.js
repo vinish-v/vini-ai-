@@ -22,8 +22,8 @@ function waitForElement(selector, timeoutMs = 3000) {
 export default async function registerBuilderSurface(canvas) {
   canvas.registerSurface({
     id: "build",
-    title: "Build",
-    icon: "code_blocks",
+    title: "Canvas",
+    icon: "dashboard_customize",
     order: 15,
     modalPath: "/plugins/_vini_app_builder/webui/main.html",
     async open(payload = {}) {

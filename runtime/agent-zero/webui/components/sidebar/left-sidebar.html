@@ -112,6 +112,10 @@
                   <span class="material-symbols-outlined" aria-hidden="true">desktop_windows</span>
                   <span>Vini AI Computer</span>
                 </button>
+                <button type="button" class="vini-nav-button" data-vini-open-canvas :class="{'is-active': $store.viniWorkspace && $store.viniWorkspace.isCanvas()}" @click="$store.viniWorkspace.openCanvas()">
+                  <span class="material-symbols-outlined" aria-hidden="true">dashboard_customize</span>
+                  <span>Canvas</span>
+                </button>
                 <button type="button" class="vini-nav-button" @click="$store.chatInput.browseFiles()">
                   <span class="material-symbols-outlined" aria-hidden="true">folder_open</span>
                   <span>Files</span>
