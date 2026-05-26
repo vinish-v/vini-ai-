@@ -1,0 +1,385 @@
+.vini-canvas-frame-shell {
+  display: flex;
+  min-height: 100%;
+  width: 100%;
+  background: #050607;
+  overflow: hidden;
+}
+
+.vini-canvas-dyad-frame {
+  width: 100%;
+  height: 100vh;
+  border: 0;
+  background: #050607;
+}
+
+.vini-canvas-workspace {
+  display: flex;
+  min-height: 100%;
+  width: 100%;
+  background: #050607;
+  color: #f6f7fb;
+  overflow: hidden;
+}
+
+.vini-canvas-rail {
+  display: flex;
+  flex: 0 0 58px;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 18px 0;
+  border-right: 1px solid rgba(255, 255, 255, 0.12);
+  background: #121314;
+}
+
+.vini-canvas-rail-button,
+.vini-canvas-key-button,
+.vini-canvas-import,
+.vini-canvas-mode,
+.vini-canvas-send,
+.vini-canvas-ideas button,
+.vini-canvas-section-heading button,
+.vini-canvas-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: #16191f;
+  color: #f8fafc;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.vini-canvas-rail-button {
+  width: 42px;
+  height: 42px;
+  border-color: transparent;
+  background: transparent;
+}
+
+.vini-canvas-rail-button:hover,
+.vini-canvas-rail-button.is-active {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.vini-canvas-rail-button:last-child {
+  margin-top: auto;
+}
+
+.vini-canvas-main {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100vh;
+  overflow-y: auto;
+  padding: 46px clamp(24px, 7vw, 112px) 64px;
+}
+
+.vini-canvas-top-action {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  display: flex;
+  justify-content: flex-end;
+  pointer-events: none;
+}
+
+.vini-canvas-key-button {
+  min-height: 50px;
+  padding: 0 18px;
+  background: #0e1014;
+  pointer-events: auto;
+}
+
+.vini-canvas-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 30px;
+  margin: 0 auto 38px;
+}
+
+.vini-canvas-hero h1 {
+  margin: 0;
+  font-size: clamp(3rem, 6vw, 4.4rem);
+  line-height: 1;
+  letter-spacing: 0;
+}
+
+.vini-canvas-import {
+  min-height: 46px;
+  padding: 0 18px;
+  background: #f7f8fb;
+  color: #07080a;
+}
+
+.vini-canvas-prompt {
+  width: min(100%, 840px);
+  margin: 0 auto;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 14px;
+  background: #101114;
+  box-shadow: 0 26px 80px rgba(0, 0, 0, 0.32);
+  overflow: hidden;
+}
+
+.vini-canvas-prompt textarea {
+  width: 100%;
+  min-height: 84px;
+  border: 0;
+  outline: 0;
+  resize: vertical;
+  padding: 18px 20px 8px;
+  background: transparent;
+  color: #e7eaf0 !important;
+  font-size: 1.1rem;
+  line-height: 1.5;
+}
+
+.vini-canvas-prompt textarea::placeholder {
+  color: #969ba6;
+}
+
+.vini-canvas-prompt-footer {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 0 10px 10px;
+}
+
+.vini-canvas-mode {
+  min-height: 38px;
+  padding: 0 13px;
+  background: #191c22;
+}
+
+.vini-canvas-model {
+  color: #aeb4c0;
+  font-size: 0.94rem;
+}
+
+.vini-canvas-send {
+  width: 42px;
+  height: 42px;
+  margin-left: auto;
+  border-radius: 50%;
+  color: #07080a;
+  background: #f4f5f8;
+}
+
+.vini-canvas-send:disabled,
+.vini-canvas-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.vini-canvas-ideas {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 16px;
+  width: min(100%, 860px);
+  margin: 36px auto 30px;
+}
+
+.vini-canvas-ideas button {
+  min-height: 48px;
+  padding: 0 20px;
+  background: #151b26;
+  color: #cfd5df;
+}
+
+.vini-canvas-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: min(100%, 840px);
+  margin: 0 auto 28px;
+  padding: 12px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  background: #12151b;
+}
+
+.spinning {
+  animation: spin 1s linear infinite;
+}
+
+.vini-canvas-projects {
+  width: min(100%, 1120px);
+  margin: 70px auto 0;
+}
+
+.vini-canvas-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.vini-canvas-section-heading h2 {
+  margin: 0;
+  font-size: 1.35rem;
+}
+
+.vini-canvas-section-heading button {
+  border: 0;
+  background: transparent;
+  color: #f7f7f7;
+}
+
+.vini-canvas-empty {
+  display: flex;
+  min-height: 210px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px dashed rgba(255, 255, 255, 0.18);
+  border-radius: 12px;
+  color: #aeb4bf;
+}
+
+.vini-canvas-empty strong {
+  color: #fff;
+}
+
+.vini-canvas-empty p {
+  margin: 0;
+}
+
+.vini-canvas-app-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 20px;
+}
+
+.vini-canvas-app-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.vini-canvas-app-card strong {
+  font-size: 1.05rem;
+}
+
+.vini-canvas-app-card small {
+  color: #9da4af;
+}
+
+.vini-canvas-app-card.is-active .vini-canvas-app-preview {
+  border-color: #7c86ff;
+}
+
+.vini-canvas-app-preview {
+  aspect-ratio: 4 / 3;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  background: #eef0f3;
+}
+
+.vini-canvas-app-preview iframe {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: white;
+}
+
+.vini-canvas-preview-placeholder {
+  display: flex;
+  height: 100%;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: #050607;
+  background: linear-gradient(180deg, #f9fafb 0%, #f1f3f6 72%, #111 100%);
+  text-align: center;
+}
+
+.vini-canvas-preview-placeholder span {
+  font-weight: 800;
+}
+
+.vini-canvas-details {
+  width: min(100%, 1120px);
+  margin: 42px auto 0;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  background: #101217;
+  overflow: hidden;
+}
+
+.vini-canvas-details-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.vini-canvas-details-head span {
+  display: block;
+  color: #aab1bc;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+}
+
+.vini-canvas-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.vini-canvas-actions button {
+  min-height: 38px;
+  padding: 0 12px;
+  background: #181c23;
+}
+
+.vini-canvas-proof {
+  max-height: 280px;
+  overflow: auto;
+  padding: 16px;
+}
+
+.vini-canvas-proof pre {
+  margin: 0;
+  white-space: pre-wrap;
+  color: #cbd3df;
+  font-family: var(--font-family-code, monospace);
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+@media (max-width: 760px) {
+  .vini-canvas-rail {
+    flex-basis: 52px;
+  }
+
+  .vini-canvas-main {
+    padding: 32px 16px 48px;
+  }
+
+  .vini-canvas-hero h1 {
+    font-size: 2.7rem;
+  }
+
+  .vini-canvas-prompt-footer,
+  .vini-canvas-details-head {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .vini-canvas-send {
+    margin-left: 0;
+  }
+}

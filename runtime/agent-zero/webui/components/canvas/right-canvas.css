@@ -420,7 +420,7 @@ body.right-canvas-resizing {
 }
 
 .right-canvas.is-os-mode .build-canvas-surface.is-mounted::before {
-  content: "Build";
+  content: "Canvas";
 }
 
 .right-canvas.is-os-mode .browser-canvas-surface.is-mounted > x-component,

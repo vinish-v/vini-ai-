@@ -1,0 +1,18 @@
+<html>
+<head>
+  <link rel="stylesheet" href="/plugins/_vini_canvas/webui/canvas-workspace.css">
+  <script type="module">
+    import { store as workspaceStore } from "/components/workspace/workspace-store.js";
+    import { store as builderStore } from "/plugins/_vini_app_builder/webui/builder-store.js";
+  </script>
+</head>
+<body>
+  <main class="vini-canvas-frame-shell" x-data>
+    <iframe
+      class="vini-canvas-dyad-frame"
+      title="Vini Canvas"
+      src="/plugins/_vini_canvas/webui/dyad-renderer/index.html?v=dyad-renderer-2"
+    ></iframe>
+  </main>
+</body>
+</html>

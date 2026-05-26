@@ -1,0 +1,8 @@
+name: _vini_canvas
+title: Vini Canvas
+description: Holds the imported Dyad source for the Vini Canvas in-shell builder integration.
+version: 0.1.0
+always_enabled: true
+settings_sections: []
+per_project_config: false
+per_agent_config: false
