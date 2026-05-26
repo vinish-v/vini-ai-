@@ -69,6 +69,7 @@ class Message(ApiHandler):
         context = self.use_context(ctxid)
         if voice_mode:
             context.get_agent().set_data("vini_voice_fast_once", True)
+            context.get_agent().set_data("vini_voice_skip_memory_once", True)
 
         # call extension point, alow it to modify data
         data = { "message": message, "attachment_paths": attachment_paths }

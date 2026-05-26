@@ -510,6 +510,19 @@ class LiteLLMChatWrapper(SimpleChatModel):
         call_kwargs: dict[str, Any] = _without_stream_kwarg({**self.kwargs, **kwargs})
         max_retries: int = int(call_kwargs.pop("a0_retry_attempts", 2))
         retry_delay_s: float = float(call_kwargs.pop("a0_retry_delay_seconds", 1.5))
+        fallback_models_raw = call_kwargs.pop("a0_fallback_models", [])
+        if isinstance(fallback_models_raw, str):
+            fallback_models = [
+                item.strip() for item in fallback_models_raw.split(",") if item.strip()
+            ]
+        elif isinstance(fallback_models_raw, (list, tuple)):
+            fallback_models = [str(item).strip() for item in fallback_models_raw if str(item).strip()]
+        else:
+            fallback_models = []
+        model_candidates = [self.model_name] + [
+            model for model in fallback_models if model and model != self.model_name
+        ]
+        model_index = 0
         stream = reasoning_callback is not None or response_callback is not None or tokens_callback is not None
 
         # results
@@ -521,7 +534,7 @@ class LiteLLMChatWrapper(SimpleChatModel):
             try:
                 # call model
                 _completion = await acompletion(
-                    model=self.model_name,
+                    model=model_candidates[model_index],
                     messages=msgs_conv,
                     stream=stream,
                     **call_kwargs,
@@ -587,7 +600,13 @@ class LiteLLMChatWrapper(SimpleChatModel):
                 import asyncio
 
                 # Retry only if no chunks received and error is transient
-                if got_any_chunk or not _is_transient_litellm_error(e) or attempt >= max_retries:
+                if got_any_chunk or not _is_transient_litellm_error(e):
+                    raise
+                if model_index < len(model_candidates) - 1:
+                    model_index += 1
+                    attempt = 0
+                    continue
+                if attempt >= max_retries:
                     raise
                 attempt += 1
                 await asyncio.sleep(retry_delay_s)

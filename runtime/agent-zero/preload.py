@@ -14,7 +14,10 @@ async def preload():
                 return None
             try:
                 config = whisper_stt_runtime.get_config()
-                return await whisper_stt_runtime.preload(str(config["model_size"]))
+                return await whisper_stt_runtime.preload(
+                    str(config["model_size"]),
+                    engine=str(config["engine"]),
+                )
             except Exception as e:
                 PrintStyle().error(f"Error in preload_whisper: {e}")
 
