@@ -15,6 +15,7 @@ import { store as _tooltipsStore } from "/components/tooltips/tooltip-store.js";
 import { store as messageQueueStore } from "/components/chat/message-queue/message-queue-store.js";
 import { store as syncStore } from "/components/sync/sync-store.js"
 import { store as rightCanvasStore } from "/components/canvas/right-canvas-store.js";
+import { store as viniWorkspaceStore } from "/components/workspace/workspace-store.js";
 import { store as desktopStore } from "/plugins/_desktop/webui/desktop-store.js";
 import { getUserHour12, getUserTimezone } from "/js/time-utils.js";
 
@@ -805,6 +806,29 @@ function startViniComputerEnvironment() {
   });
 }
 
+function openViniCanvasWorkspaceFallback() {
+  try {
+    if (viniWorkspaceStore && typeof viniWorkspaceStore.openCanvas === "function") {
+      viniWorkspaceStore.openCanvas();
+    }
+  } catch (error) {
+    console.warn("[index] Vini Canvas store open failed:", error);
+  }
+
+  document.body.classList.add("vini-canvas-active");
+  document.body.classList.remove("right-canvas-open");
+
+  const agentWorkspace = document.getElementById("vini-agent-workspace");
+  const agentInput = document.getElementById("vini-agent-input-host");
+  const canvasWorkspace = document.getElementById("vini-canvas-workspace-host");
+  if (agentWorkspace) agentWorkspace.style.display = "none";
+  if (agentInput) agentInput.style.display = "none";
+  if (canvasWorkspace) {
+    canvasWorkspace.style.display = "flex";
+    canvasWorkspace.removeAttribute("x-cloak");
+  }
+}
+
 // All initializations and event listeners are now consolidated here
 document.addEventListener("DOMContentLoaded", function () {
   // Assign DOM elements to variables now that the DOM is ready
@@ -821,6 +845,12 @@ document.addEventListener("DOMContentLoaded", function () {
   timeDate = document.getElementById("time-date-container");
 
   updateChatHeroState();
+
+  document.addEventListener("click", (event) => {
+    const canvasButton = event.target?.closest?.("[data-vini-open-canvas]");
+    if (!canvasButton) return;
+    openViniCanvasWorkspaceFallback();
+  });
 
   // Start polling for updates
   startPolling();

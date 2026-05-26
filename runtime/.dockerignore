@@ -5,7 +5,7 @@ agent-zero/__pycache__
 agent-zero/**/__pycache__
 agent-zero/.venv
 agent-zero/venv
+agent-zero/plugins/_vini_canvas/dyad/node_modules
 agent-zero/usr/workdir
 agent-zero/usr/settings.json
 agent-zero/usr/**/*.log
-
