@@ -52,20 +52,22 @@ export default function ChatPage() {
       return;
     }
 
-    if (!selectedAppId) {
-      navigate({ to: "/", replace: true });
-      return;
-    }
-
     if (chats.length) {
       // Not a real navigation, just a redirect, when the user navigates to /chat
-      // without a chatId, we redirect to the first chat
+      // without a chatId, we redirect to the newest chat. When selectedAppId is
+      // null, useChats returns the global chat list, so this also recovers the
+      // Canvas tab after reloads where atom state has not hydrated yet.
       setSelectedAppId(chats[0].appId);
       navigate({
         to: "/chat",
         search: { id: chats[0].id, appId: chats[0].appId },
         replace: true,
       });
+      return;
+    }
+
+    if (!selectedAppId) {
+      navigate({ to: "/", replace: true });
       return;
     }
 
@@ -89,9 +91,15 @@ export default function ChatPage() {
       return;
     }
 
-    // If chatId is already in our loaded chats list, selectedAppId is correct
-    // for this chat (useChats filters by selectedAppId), so skip the IPC fetch.
-    if (chats.some((c) => c.id === chatId)) {
+    // If chatId is already in our loaded chats list, use that summary to set
+    // selectedAppId. This matters when selectedAppId is null and useChats has
+    // returned the global list after a renderer reload.
+    const loadedChat = chats.find((c) => c.id === chatId);
+    if (loadedChat) {
+      if (loadedChat.appId !== selectedAppIdRef.current) {
+        selectedAppIdRef.current = loadedChat.appId;
+        setSelectedAppId(loadedChat.appId);
+      }
       return;
     }
 
