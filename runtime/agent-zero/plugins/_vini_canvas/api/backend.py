@@ -523,6 +523,38 @@ def _handle(data: dict[str, Any]) -> dict[str, Any]:
     if action == "get_app":
         return {"ok": True, "app": _app_response(_find_app(state, int(data.get("appId"))), full=True)}
 
+    if action == "set_app_theme":
+        app = _find_app(state, int(data.get("appId")))
+        raw_theme_id = data.get("themeId")
+        theme_id = str(raw_theme_id).strip() if raw_theme_id is not None else None
+        if not theme_id:
+            theme_id = None
+        app["themeId"] = theme_id
+        app["updatedAt"] = _now()
+        manifest = builder._load_manifest(str(app["project_id"]))
+        manifest["canvas_theme_id"] = theme_id
+        builder._save_manifest(str(app["project_id"]), manifest)
+        _save_state(state)
+        return {"ok": True, "themeId": theme_id}
+
+    if action == "get_app_theme":
+        app = _find_app(state, int(data.get("appId")))
+        return {"ok": True, "themeId": app.get("themeId") or None}
+
+    if action == "apply_app_template":
+        app = _find_app(state, int(data.get("appId")))
+        template_id = str(data.get("templateId") or "react").strip()
+        supported_templates = {"react", "vite-react", "vite-react-ts", "default"}
+        if template_id not in supported_templates:
+            return {"ok": False, "error": f"Vini Canvas template is not available yet: {template_id}"}
+        app["templateId"] = template_id
+        app["updatedAt"] = _now()
+        manifest = builder._load_manifest(str(app["project_id"]))
+        manifest["canvas_template_id"] = template_id
+        builder._save_manifest(str(app["project_id"]), manifest)
+        _save_state(state)
+        return {"ok": True, "applied": False, "needsRestart": False}
+
     if action == "delete_app":
         app_id = int(data.get("appId"))
         app = _find_app(state, app_id)

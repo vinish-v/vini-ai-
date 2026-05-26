@@ -63,6 +63,10 @@
       throw new Error(data.error || "Unable to read Vini runtime CSRF token");
     }
     csrfToken = data.token;
+    if (data.runtime_id) {
+      const secureFlag = window.location.protocol === "https:" ? "; Secure" : "";
+      document.cookie = `csrf_token_${data.runtime_id}=${csrfToken}; SameSite=Lax; Path=/${secureFlag}`;
+    }
     return csrfToken;
   }
 
@@ -333,6 +337,32 @@
       case "get-app": {
         const result = await canvasBackend("get_app", { appId: input });
         return result.app;
+      }
+      case "get-templates":
+        return [
+          {
+            id: "react",
+            title: "React",
+            description: "Vini Canvas default Vite React app template",
+            imageUrl: "",
+            isOfficial: true,
+            isExperimental: false,
+            requiresNeon: false,
+          },
+        ];
+      case "apply-app-template": {
+        const result = await canvasBackend("apply_app_template", input || {});
+        return {
+          applied: Boolean(result.applied),
+          needsRestart: Boolean(result.needsRestart),
+        };
+      }
+      case "set-app-theme":
+        await canvasBackend("set_app_theme", input || {});
+        return undefined;
+      case "get-app-theme": {
+        const result = await canvasBackend("get_app_theme", input || {});
+        return result.themeId || null;
       }
       case "delete-app":
         await canvasBackend("delete_app", input || {});
