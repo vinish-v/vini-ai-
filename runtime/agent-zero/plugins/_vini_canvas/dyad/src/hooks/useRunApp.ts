@@ -114,11 +114,20 @@ export function useRebuildAppAfterPnpmInstall() {
           setConsoleEntries((prev) => [...prev, logEntry]);
         }
 
-        await ipc.app.restartApp({
+        const result = await ipc.app.restartApp({
           appId: rebuildAppId,
           removeNodeModules: true,
           recreateSandbox: false,
         });
+        const previewUrl = result?.preview?.preview_url;
+        if (isActiveApp() && previewUrl) {
+          setAppUrlObj({
+            appUrl: previewUrl,
+            appId: rebuildAppId,
+            originalUrl: result.preview?.internal_preview_url ?? previewUrl,
+            mode: "host",
+          });
+        }
         if (isActiveApp()) {
           setPreviewErrorMessage(undefined);
         }
@@ -420,7 +429,16 @@ export function useRunApp() {
       setConsoleEntries((prev) => [...prev, logEntry]);
       const app = await ipc.app.getApp(appId);
       setApp(app);
-      await ipc.app.runApp({ appId });
+      const result = await ipc.app.runApp({ appId });
+      const previewUrl = result?.preview?.preview_url;
+      if (previewUrl) {
+        setAppUrlObj({
+          appUrl: previewUrl,
+          appId,
+          originalUrl: result.preview?.internal_preview_url ?? previewUrl,
+          mode: "host",
+        });
+      }
       setPreviewErrorMessage(undefined);
     } catch (error) {
       console.error(`Error running app ${appId}:`, error);
@@ -517,7 +535,20 @@ export function useRunApp() {
 
         const app = await ipc.app.getApp(appId);
         setApp(app);
-        await ipc.app.restartApp({ appId, removeNodeModules, recreateSandbox });
+        const result = await ipc.app.restartApp({
+          appId,
+          removeNodeModules,
+          recreateSandbox,
+        });
+        const previewUrl = result?.preview?.preview_url;
+        if (previewUrl) {
+          setAppUrlObj({
+            appUrl: previewUrl,
+            appId,
+            originalUrl: result.preview?.internal_preview_url ?? previewUrl,
+            mode: "host",
+          });
+        }
         setPreviewErrorMessage(undefined);
       } catch (error) {
         console.error(`Error restarting app ${appId}:`, error);

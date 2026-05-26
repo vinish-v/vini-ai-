@@ -55,6 +55,7 @@ export type App = z.infer<typeof AppSchema>;
  */
 export const CreateAppParamsSchema = z.object({
   name: z.string().min(1),
+  prompt: z.string().optional(),
   initialChatMode: ChatModeSchema.optional(),
 });
 
@@ -335,6 +336,22 @@ export const AppSearchResultSchema = z.object({
   matchedChatMessage: z.string().nullable(),
 });
 
+const ViniPreviewResultSchema = z
+  .object({
+    preview_url: z.string().optional(),
+    internal_preview_url: z.string().optional(),
+  })
+  .passthrough()
+  .optional();
+
+export const ViniRunAppResultSchema = z
+  .object({
+    ok: z.boolean().optional(),
+    preview: ViniPreviewResultSchema,
+    project: z.unknown().optional(),
+  })
+  .passthrough();
+
 // =============================================================================
 // App Contracts
 // =============================================================================
@@ -385,7 +402,7 @@ export const appContracts = {
   runApp: defineContract({
     channel: "run-app",
     input: AppIdParamsSchema,
-    output: z.void(),
+    output: ViniRunAppResultSchema.optional(),
   }),
 
   stopApp: defineContract({
@@ -397,7 +414,7 @@ export const appContracts = {
   restartApp: defineContract({
     channel: "restart-app",
     input: RestartAppParamsSchema,
-    output: z.void(),
+    output: ViniRunAppResultSchema.optional(),
   }),
 
   getCloudSandboxStatus: defineContract({

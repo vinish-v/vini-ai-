@@ -126,6 +126,45 @@ import { detectFrameworkType } from "../utils/framework_utils";
 const logger = log.scope("app_handlers");
 const handle = createLoggedHandler(logger);
 
+type ViniRunAppResult = {
+  ok?: boolean;
+  preview?: {
+    preview_url?: string;
+    internal_preview_url?: string;
+  };
+  project?: unknown;
+  [key: string]: unknown;
+};
+
+function getRunningPreviewResult(appId: number): ViniRunAppResult | undefined {
+  const appInfo = runningApps.get(appId);
+  if (!appInfo?.proxyUrl) {
+    return undefined;
+  }
+
+  return {
+    ok: true,
+    preview: {
+      preview_url: appInfo.proxyUrl,
+      internal_preview_url: appInfo.originalUrl ?? appInfo.proxyUrl,
+    },
+  };
+}
+
+async function waitForRunningPreviewResult(
+  appId: number,
+): Promise<ViniRunAppResult | undefined> {
+  const deadline = Date.now() + 5_000;
+  while (Date.now() < deadline) {
+    const result = getRunningPreviewResult(appId);
+    if (result) {
+      return result;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  return getRunningPreviewResult(appId);
+}
+
 function sanitizeSnippetText(text: string) {
   return text.replace(/\s+/g, " ").trim();
 }
@@ -674,7 +713,7 @@ export function registerAppHandlers() {
             mode: appInfo.mode,
           });
         }
-        return;
+        return getRunningPreviewResult(appId);
       }
 
       const app = await db.query.apps.findFirst({
@@ -700,7 +739,7 @@ export function registerAppHandlers() {
           startCommand: app.startCommand,
         });
 
-        return;
+        return await waitForRunningPreviewResult(appId);
       } catch (error: any) {
         logger.error(`Error running app ${appId}:`, error);
         // Ensure cleanup if error happens during setup but before process events are handled
@@ -902,7 +941,7 @@ export function registerAppHandlers() {
             sandboxId: appInfo.cloudSandboxId,
             cloudLogAbortController: appInfo.cloudLogAbortController,
           });
-          return;
+          return await waitForRunningPreviewResult(appId);
         }
 
         if (appInfo) {
@@ -969,7 +1008,7 @@ export function registerAppHandlers() {
           startCommand: app.startCommand,
         }); // This will handle starting either mode
 
-        return;
+        return await waitForRunningPreviewResult(appId);
       } catch (error) {
         logger.error(`Error restarting app ${appId}:`, error);
         console.error(error);
