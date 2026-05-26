@@ -772,7 +772,7 @@ def proxy_preview(project_id: str, subpath: str = "") -> Response:
     port = int(manifest.get("preview_port") or 0)
     if not port:
         return Response("Preview has not been started for this project.", status=404)
-    target_path = "/" + (subpath or "")
+    target_path = f"/vini-preview/{project_id}/" + (subpath or "")
     query = request.query_string.decode("utf-8", errors="replace")
     target = f"http://127.0.0.1:{port}{target_path}"
     if query:

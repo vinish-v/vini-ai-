@@ -11,15 +11,15 @@ def register_routes(app: Flask) -> None:
     from plugins._vini_app_builder.helpers import builder
 
     @requires_auth
-    def preview_root(project_id: str):
+    async def preview_root(project_id: str):
         return builder.proxy_preview(project_id, "")
 
     @requires_auth
-    def preview_path(project_id: str, subpath: str):
+    async def preview_path(project_id: str, subpath: str):
         return builder.proxy_preview(project_id, subpath)
 
     @requires_auth
-    def export_project(project_id: str):
+    async def export_project(project_id: str):
         return builder.download_export(project_id)
 
     app.add_url_rule(
