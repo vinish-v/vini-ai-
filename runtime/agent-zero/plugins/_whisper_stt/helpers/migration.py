@@ -9,8 +9,8 @@ from helpers import files, plugins
 PLUGIN_NAME = "_whisper_stt"
 LEGACY_SETTINGS_FILE = files.get_abs_path("usr/settings.json")
 DEFAULT_CONFIG = {
-    "engine": "parakeet",
-    "model_size": "base",
+    "engine": "whisper",
+    "model_size": "tiny",
     "language": "en",
     "message_mode": "send",
     "silence_threshold": 0.3,
@@ -41,7 +41,7 @@ def read_saved_config() -> dict[str, Any]:
         return {}
 
     try:
-        return json.loads(files.read_file(config_path))
+        return json.loads(files.read_file(config_path).lstrip("\ufeff"))
     except Exception:
         return {}
 
