@@ -1,6 +1,6 @@
 enabled: true
-projects_root: "/a0/usr/projects"
-exports_root: "/a0/usr/exports"
+projects_root: "/a0/usr/canvas/projects"
+exports_root: "/a0/usr/canvas/exports"
 preview_port_start: 43100
 preview_port_end: 43199
 command_timeout_seconds: 240

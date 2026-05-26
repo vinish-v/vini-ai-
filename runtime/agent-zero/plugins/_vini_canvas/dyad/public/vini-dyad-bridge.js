@@ -71,8 +71,7 @@
   }
 
   async function postJson(url, body) {
-    const token = await getCsrfToken();
-    const response = await fetch(url, {
+    const makeRequest = async (token) => fetch(url, {
       method: "POST",
       credentials: "same-origin",
       headers: {
@@ -81,6 +80,18 @@
       },
       body: JSON.stringify(body || {}),
     });
+    let token = await getCsrfToken();
+    let response = await makeRequest(token);
+    if (response.status === 403) {
+      const text = await response.text();
+      if (/csrf/i.test(text)) {
+        csrfToken = null;
+        token = await getCsrfToken();
+        response = await makeRequest(token);
+      } else {
+        throw new Error(text || "Vini runtime API rejected the request.");
+      }
+    }
     if (!response.ok) {
       const text = await response.text();
       throw new Error(text || `Vini runtime API failed: ${response.status}`);
@@ -521,7 +532,7 @@
             timestamp: Date.now(),
           });
         }
-        return undefined;
+        return result;
       }
       case "stop-app":
         await canvasBackend("stop_app", input || {});
@@ -545,7 +556,7 @@
             timestamp: Date.now(),
           });
         }
-        return undefined;
+        return result;
       }
       case "select-app-for-preview":
         return undefined;

@@ -5,6 +5,89 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+const APP_NAME_STOP_WORDS = new Set([
+  "a",
+  "an",
+  "and",
+  "app",
+  "application",
+  "build",
+  "create",
+  "for",
+  "make",
+  "me",
+  "modern",
+  "new",
+  "page",
+  "responsive",
+  "site",
+  "the",
+  "to",
+  "website",
+  "with",
+]);
+
+export function deriveAppNameFromPrompt(prompt: string): string {
+  const cleanPrompt = prompt.trim();
+  if (!cleanPrompt) return "Vini Canvas App";
+
+  const titleCaseName = (value: string): string => {
+    const minorWords = new Set([
+      "a",
+      "an",
+      "and",
+      "at",
+      "by",
+      "for",
+      "in",
+      "of",
+      "on",
+      "the",
+      "to",
+      "with",
+    ]);
+    return value
+      .replace(/[^A-Za-z0-9\s&'-]/g, " ")
+      .split(/\s+/)
+      .map((word) => word.trim())
+      .filter(Boolean)
+      .slice(0, 6)
+      .map((word, index) => {
+        const lower = word.toLowerCase();
+        if (index > 0 && minorWords.has(lower)) return lower;
+        return lower.charAt(0).toUpperCase() + lower.slice(1);
+      })
+      .join(" ")
+      .trim();
+  };
+
+  const namedMatch = cleanPrompt.match(
+    /\b(?:called|named)\s+["']?(.{2,90}?)(?:["']?(?:[.!?,;:\n]|$))/i,
+  );
+  if (namedMatch?.[1]) {
+    const candidate = namedMatch[1]
+      .trim()
+      .replace(/\b(?:build|create|include|make|use|with)\b.*$/i, "")
+      .trim()
+      .replace(/^["']|["']$/g, "");
+    const name = titleCaseName(candidate);
+    if (name) return name.slice(0, 60);
+  }
+
+  const words = cleanPrompt
+    .replace(/[^A-Za-z0-9\s-]/g, " ")
+    .split(/\s+/)
+    .map((word) => word.trim())
+    .filter((word) => {
+      if (!word) return false;
+      return !APP_NAME_STOP_WORDS.has(word.toLowerCase());
+    })
+    .slice(0, 5);
+
+  const name = titleCaseName(words.join(" "));
+  return (name || "Vini Canvas App").slice(0, 60);
+}
+
 /**
  * Generates a cute app name.
  */

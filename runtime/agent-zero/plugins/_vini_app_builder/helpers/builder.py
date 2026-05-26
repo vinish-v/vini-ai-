@@ -24,6 +24,9 @@ PLUGIN_NAME = "_vini_app_builder"
 MANIFEST_NAME = "vini-project.json"
 LOG_NAME = "vini-builder.log"
 DEFAULT_FRAMEWORK = "vite-react-ts"
+DEFAULT_PROJECTS_ROOT = "/a0/usr/canvas/projects"
+DEFAULT_EXPORTS_ROOT = "/a0/usr/canvas/exports"
+LEGACY_PROJECTS_ROOT = "/a0/usr/projects"
 PROJECT_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{1,62}$")
 SKIP_EXPORT_DIRS = {"node_modules", ".git", "dist", ".vite"}
 SKIP_EXPORT_FILES = {LOG_NAME}
@@ -49,8 +52,8 @@ def _config() -> dict[str, Any]:
     raw = plugins.get_plugin_config(PLUGIN_NAME) or {}
     return {
         "enabled": bool(raw.get("enabled", True)),
-        "projects_root": str(raw.get("projects_root") or "/a0/usr/projects"),
-        "exports_root": str(raw.get("exports_root") or "/a0/usr/exports"),
+        "projects_root": str(raw.get("projects_root") or DEFAULT_PROJECTS_ROOT),
+        "exports_root": str(raw.get("exports_root") or DEFAULT_EXPORTS_ROOT),
         "preview_port_start": int(raw.get("preview_port_start") or 43100),
         "preview_port_end": int(raw.get("preview_port_end") or 43199),
         "command_timeout_seconds": int(raw.get("command_timeout_seconds") or 240),
@@ -73,6 +76,32 @@ def _projects_root() -> Path:
     root = _resolve_a0_path(_config()["projects_root"])
     root.mkdir(parents=True, exist_ok=True)
     return root
+
+
+def _legacy_projects_root() -> Path:
+    return _resolve_a0_path(LEGACY_PROJECTS_ROOT)
+
+
+def _migrate_legacy_project(project_id: str, target: Path) -> None:
+    if target.exists():
+        return
+    legacy = (_legacy_projects_root() / project_id).resolve()
+    legacy_manifest = legacy / MANIFEST_NAME
+    if not legacy_manifest.is_file():
+        return
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.move(str(legacy), str(target))
+
+
+def _migrate_legacy_projects() -> None:
+    legacy_root = _legacy_projects_root()
+    if not legacy_root.is_dir():
+        return
+    for manifest_path in legacy_root.glob(f"*/{MANIFEST_NAME}"):
+        project_id = manifest_path.parent.name
+        if not PROJECT_ID_RE.match(project_id):
+            continue
+        _migrate_legacy_project(project_id, _projects_root() / project_id)
 
 
 def _exports_root() -> Path:
@@ -106,6 +135,7 @@ def _project_dir(project_id: str) -> Path:
         target.relative_to(root)
     except ValueError as exc:
         raise ValueError("Project path escaped the Vini AI projects root.") from exc
+    _migrate_legacy_project(project_id, target)
     return target
 
 
@@ -150,10 +180,11 @@ def _save_manifest(project_id: str, manifest: dict[str, Any]) -> dict[str, Any]:
 def _public_project(manifest: dict[str, Any]) -> dict[str, Any]:
     project_id = str(manifest["project_id"])
     status = _process_status(project_id)
+    project_path = _project_dir(project_id)
     public = dict(manifest)
     public["preview_process"] = status
-    public["project_path"] = str(_project_dir(project_id))
-    public["project_a0_path"] = f"/a0/usr/projects/{project_id}"
+    public["project_path"] = str(project_path)
+    public["project_a0_path"] = str(project_path)
     public["manifest_path"] = str(_manifest_path(project_id))
     public["log_path"] = str(_log_path(project_id))
     return public
@@ -370,7 +401,8 @@ export default defineConfig({{
   plugins: [react()],
   server: {{
     host: "127.0.0.1",
-    strictPort: true
+    strictPort: true,
+    hmr: false
   }}
 }});
 """,
@@ -596,6 +628,7 @@ def create_project(name: str = "", prompt: str = "", project_id: str = "", overw
 
 
 def list_projects() -> dict[str, Any]:
+    _migrate_legacy_projects()
     root = _projects_root()
     projects = []
     for manifest_path in root.glob(f"*/{MANIFEST_NAME}"):
@@ -695,11 +728,28 @@ def build_project(project_id: str, install: bool = True) -> dict[str, Any]:
     return {"ok": ok, "project": _public_project(manifest), "commands": commands}
 
 
+def _disable_vite_hmr_for_proxy(project_id: str) -> None:
+    config_path = _project_dir(project_id) / "vite.config.ts"
+    if not config_path.exists():
+        return
+    try:
+        content = config_path.read_text(encoding="utf-8")
+    except Exception:
+        return
+    if "hmr:" in content or "strictPort: true" not in content:
+        return
+    updated = content.replace("strictPort: true", "strictPort: true,\n    hmr: false", 1)
+    if updated != content:
+        config_path.write_text(updated, encoding="utf-8")
+        _append_log(project_id, "Disabled Vite HMR for proxied Vini Canvas preview")
+
+
 def preview_project(project_id: str, start: bool = True, verify: bool = True) -> dict[str, Any]:
     manifest = _load_manifest(project_id)
     port = int(manifest.get("preview_port") or 0)
     status = _process_status(project_id)
     if not status.get("running") and start:
+        _disable_vite_hmr_for_proxy(project_id)
         port = _find_free_port(project_id)
         env = os.environ.copy()
         env["VINI_PREVIEW_BASE"] = f"/vini-preview/{project_id}/"

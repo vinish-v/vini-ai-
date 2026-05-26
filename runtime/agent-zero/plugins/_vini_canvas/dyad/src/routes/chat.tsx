@@ -8,7 +8,7 @@ export const chatRoute = createRoute({
   path: "/chat",
   component: ChatPage,
   validateSearch: z.object({
-    id: z.number().optional(),
-    appId: z.number().optional(),
+    id: z.coerce.number().optional(),
+    appId: z.coerce.number().optional(),
   }),
 });

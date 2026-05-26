@@ -3,7 +3,7 @@ import { useNavigate, useSearch } from "@tanstack/react-router";
 import { useAtom, useSetAtom } from "jotai";
 import { homeChatInputValueAtom } from "../atoms/chatAtoms";
 import { ipc } from "@/ipc/types";
-import { generateCuteAppName } from "@/lib/utils";
+import { deriveAppNameFromPrompt } from "@/lib/utils";
 import { useLoadApps } from "@/hooks/useLoadApps";
 import { useSettings } from "@/hooks/useSettings";
 import { SetupBanner } from "@/components/SetupBanner";
@@ -158,8 +158,9 @@ export default function HomePage() {
   const handleSubmit = async (options?: HomeSubmitOptions) => {
     const attachments = options?.attachments || [];
     const selectedApp = options?.selectedApp;
+    const prompt = inputValue.trim();
 
-    if (!inputValue.trim() && attachments.length === 0) return;
+    if (!prompt && attachments.length === 0) return;
 
     try {
       setLoadingMode(selectedApp ? "existing" : "new");
@@ -177,7 +178,8 @@ export default function HomePage() {
       } else {
         // New app flow (default behavior)
         const result = await ipc.app.createApp({
-          name: generateCuteAppName(),
+          name: deriveAppNameFromPrompt(prompt),
+          prompt,
           initialChatMode,
         });
         chatId = result.chatId;
@@ -202,27 +204,22 @@ export default function HomePage() {
         }
       }
 
+      setInputValue("");
+      setIsPreviewOpen(false);
+      await refreshApps();
+      await invalidateAppQuery(queryClient, { appId });
+      await queryClient.invalidateQueries({ queryKey: queryKeys.chats.all });
+      selectChat({ chatId, appId });
+
       // Stream the message with attachments
       streamMessage({
-        prompt: inputValue,
+        prompt,
         chatId,
         appId,
         attachments,
         requestedChatMode: initialChatMode,
       });
-      await new Promise((resolve) =>
-        setTimeout(resolve, settings?.isTestMode ? 0 : 2000),
-      );
-
-      setInputValue("");
-      setIsPreviewOpen(false);
-      await refreshApps();
-      await invalidateAppQuery(queryClient, { appId });
-      // Invalidate chats so ChatTabs picks up the new chat immediately.
-      await queryClient.invalidateQueries({ queryKey: queryKeys.chats.all });
       posthog.capture("home:chat-submit", { existingApp: !!selectedApp });
-      // Select newly created first chat so it appears first in tabs.
-      selectChat({ chatId, appId });
     } catch (error) {
       console.error("Failed to create chat:", error);
       showError(

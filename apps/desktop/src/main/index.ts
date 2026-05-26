@@ -9,6 +9,8 @@ const __dirname = path.dirname(__filename);
 const loadingLogoUrl = new URL("../renderer/vini-ai-mark.png", import.meta.url).toString();
 const hostBridge = new HostBridge();
 const runtimeManager = new RuntimeManager(hostBridge);
+const RUNTIME_BOOT_POLL_MS = 3000;
+const RUNTIME_BOOT_TIMEOUT_MS = 10 * 60 * 1000;
 
 app.setName("Vini AI");
 
@@ -115,24 +117,46 @@ function registerIpcHandlers(): void {
 }
 
 async function bootRuntimeInto(window: BrowserWindow): Promise<void> {
-  const startResult = await runtimeManager.start();
-  if (!startResult.ok) {
-    await window.loadURL(loadingPage("Vini AI runtime could not start", startResult.message));
-    return;
-  }
-
-  const deadline = Date.now() + 5 * 60 * 1000;
-  while (Date.now() < deadline) {
-    const status = await runtimeManager.getStatus();
-    if (status.health.ok) {
-      await window.loadURL(status.url);
+  try {
+    const startResult = await runtimeManager.start();
+    if (!startResult.ok) {
+      await window.loadURL(loadingPage("Vini AI runtime could not start", startResult.message));
       return;
     }
-    await new Promise((resolve) => setTimeout(resolve, 3000));
-  }
 
-  const status = await runtimeManager.getStatus();
-  await window.loadURL(loadingPage("Vini AI runtime did not become healthy in time", status.health.error || `HTTP ${status.health.statusCode || "unavailable"}`));
+    const deadline = Date.now() + RUNTIME_BOOT_TIMEOUT_MS;
+    let lastError = "";
+
+    while (!window.isDestroyed() && Date.now() < deadline) {
+      const status = await runtimeManager.getStatus();
+      if (status.health.ok) {
+        try {
+          await window.loadURL(status.url);
+          return;
+        } catch (error) {
+          lastError = error instanceof Error ? error.message : String(error);
+          console.error("Vini AI runtime reported healthy, but app navigation failed. Retrying.", error);
+        }
+      } else {
+        lastError = status.health.error || `HTTP ${status.health.statusCode || "unavailable"}`;
+      }
+      await new Promise((resolve) => setTimeout(resolve, RUNTIME_BOOT_POLL_MS));
+    }
+
+    if (window.isDestroyed()) {
+      return;
+    }
+
+    const status = await runtimeManager.getStatus();
+    const detail = lastError || status.health.error || `HTTP ${status.health.statusCode || "unavailable"}`;
+    await window.loadURL(loadingPage("Vini AI runtime did not become healthy in time", detail));
+  } catch (error) {
+    const detail = error instanceof Error ? error.stack || error.message : String(error);
+    console.error("Vini AI desktop boot failed.", error);
+    if (!window.isDestroyed()) {
+      await window.loadURL(loadingPage("Vini AI desktop boot failed", detail));
+    }
+  }
 }
 
 app.whenReady().then(async () => {

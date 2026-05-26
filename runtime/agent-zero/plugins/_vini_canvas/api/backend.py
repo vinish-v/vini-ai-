@@ -41,6 +41,70 @@ def _unique_project_id(name: str) -> str:
     return candidate
 
 
+def _derive_app_name(prompt: str, fallback: str = "Vini Canvas App") -> str:
+    clean = str(prompt or "").strip()
+    if not clean:
+        return fallback
+
+    def title_case_name(value: str) -> str:
+        minor_words = {"a", "an", "and", "at", "by", "for", "in", "of", "on", "the", "to", "with"}
+        words = re.sub(r"[^A-Za-z0-9\s&'-]", " ", value).split()
+        titled = []
+        for index, word in enumerate(words[:6]):
+            lower = word.lower()
+            if index > 0 and lower in minor_words:
+                titled.append(lower)
+            else:
+                titled.append(lower[:1].upper() + lower[1:])
+        return " ".join(titled).strip()
+
+    match = re.search(
+        r"\b(?:called|named)\s+[\"']?(.{2,90}?)(?:[\"']?(?:[.!?,;:\n]|$))",
+        clean,
+        re.IGNORECASE,
+    )
+    if match:
+        candidate = re.sub(
+            r"\b(?:build|create|include|make|use|with)\b.*$",
+            "",
+            match.group(1).strip(),
+            flags=re.IGNORECASE,
+        ).strip(" \"'")
+        name = title_case_name(candidate)
+        if name:
+            return name[:60]
+
+    stop_words = {
+        "a",
+        "an",
+        "and",
+        "app",
+        "application",
+        "build",
+        "create",
+        "for",
+        "make",
+        "me",
+        "modern",
+        "new",
+        "page",
+        "responsive",
+        "site",
+        "the",
+        "to",
+        "website",
+        "with",
+    }
+    words = [
+        word
+        for word in re.sub(r"[^A-Za-z0-9\s-]", " ", clean).split()
+        if word and word.lower() not in stop_words
+    ][:5]
+    if not words:
+        return fallback
+    return title_case_name(" ".join(words))[:60] or fallback
+
+
 def _delete_project_dir(project_id: str) -> None:
     target = builder._project_dir(project_id).resolve()
     root = target.parent.resolve()
@@ -345,7 +409,7 @@ async def _generate_app_turn(state: dict[str, Any], data: dict[str, Any]) -> dic
     if not prompt:
         raise ValueError("Prompt is required.")
 
-    _append_message(state, chat, "user", prompt)
+    _append_message_once(state, chat, "user", prompt)
     _save_state(state)
 
     generated_files, cfg, summary = await _generate_files_with_vini_model(app=app, chat=chat, prompt=prompt)
@@ -497,6 +561,17 @@ def _append_message(state: dict[str, Any], chat: dict[str, Any], role: str, cont
     return message
 
 
+def _append_message_once(state: dict[str, Any], chat: dict[str, Any], role: str, content: str) -> dict[str, Any]:
+    clean_content = str(content or "").strip()
+    for message in reversed(chat.get("messages") or []):
+        if str(message.get("role") or "") != role:
+            continue
+        if str(message.get("content") or "").strip() == clean_content:
+            return message
+        break
+    return _append_message(state, chat, role, clean_content)
+
+
 def _handle(data: dict[str, Any]) -> dict[str, Any]:
     action = str(data.get("action") or "").strip()
     state = _load_state()
@@ -510,13 +585,14 @@ def _handle(data: dict[str, Any]) -> dict[str, Any]:
         return {"ok": True, "exists": exists, "message": "App name already exists." if exists else ""}
 
     if action == "create_app":
-        name = str(data.get("name") or "").strip() or "Untitled App"
+        prompt = str(data.get("prompt") or "").strip()
+        name = str(data.get("name") or "").strip() or _derive_app_name(prompt, "Untitled App")
         project_id = _unique_project_id(name)
         created = builder.handle_action(
             {
                 "action": "create",
                 "name": name,
-                "prompt": str(data.get("prompt") or ""),
+                "prompt": prompt,
                 "project_id": project_id,
             }
         )
@@ -533,6 +609,10 @@ def _handle(data: dict[str, Any]) -> dict[str, Any]:
         }
         state["apps"].append(app)
         chat_id = _create_chat(state, app["id"], data.get("initialChatMode") or "build")
+        if prompt:
+            chat = _find_chat(state, chat_id)
+            _append_message_once(state, chat, "user", prompt)
+            chat["title"] = prompt[:60]
         _save_state(state)
         return {"ok": True, "app": _app_response(app), "chatId": chat_id}
 
@@ -636,6 +716,7 @@ def _handle(data: dict[str, Any]) -> dict[str, Any]:
         chats = state["chats"]
         if app_id is not None:
             chats = [chat for chat in chats if int(chat.get("appId")) == int(app_id)]
+        chats = sorted(chats, key=lambda chat: str(chat.get("updatedAt") or chat.get("createdAt") or ""), reverse=True)
         return {"ok": True, "chats": [_chat_summary(chat) for chat in chats]}
 
     if action == "get_chat":

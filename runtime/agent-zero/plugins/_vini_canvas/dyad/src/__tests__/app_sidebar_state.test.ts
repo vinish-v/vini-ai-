@@ -48,7 +48,7 @@ describe("app sidebar state", () => {
     ).toBe(false);
     expect(
       shouldShowSelectedAppChatList({
-        selectedPanel: "Settings",
+        selectedPanel: null,
         selectedAppId: 1,
         pathname: "/app-details",
       }),
