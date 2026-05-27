@@ -484,7 +484,25 @@
       case "chat:stream": {
         const params = input || {};
         const chatId = Number(params.chatId);
+        const appIdForProgress = Number(params.appId || params.app?.id || 0) || undefined;
         emit("chat:stream:start", { chatId });
+        for (const message of [
+          "Planning design",
+          "Selecting skills",
+          "Selecting design system",
+          "Writing files",
+          "Installing dependencies",
+          "Building",
+          "Starting preview",
+          "Running visual QA",
+        ]) {
+          emit("app:output", {
+            type: "info",
+            message,
+            appId: appIdForProgress,
+            timestamp: Date.now(),
+          });
+        }
         const result = await canvasBackend("generate_app", params);
         emit("chat:response:chunk", {
           chatId,
@@ -564,6 +582,32 @@
         throw new Error("Vini Canvas has not connected custom app command editing yet.");
       case "get-cloud-sandbox-status":
         return null;
+      case "sync-open-design-catalog":
+        return await canvasBackend("sync_open_design_catalog", input || {});
+      case "list-design-skills": {
+        const result = await canvasBackend("list_design_skills", input || {});
+        return result.skills || [];
+      }
+      case "list-design-systems": {
+        const result = await canvasBackend("list_design_systems", input || {});
+        return result.designSystems || [];
+      }
+      case "select-design-context": {
+        const result = await canvasBackend("select_design_context", input || {});
+        return result.context || null;
+      }
+      case "create-design-brief": {
+        const result = await canvasBackend("create_design_brief", input || {});
+        return result.brief || null;
+      }
+      case "run-visual-qa": {
+        const result = await canvasBackend("run_visual_qa", input || {});
+        return result.visualQa || null;
+      }
+      case "get-build-proof": {
+        const result = await canvasBackend("get_build_proof", input || {});
+        return result.proof || null;
+      }
       case "app:get-current-commit-hash":
         return { commitHash: null };
       case "app:list-screenshots":
@@ -617,5 +661,14 @@
     webFrame: {
       setZoomFactor() {},
     },
+  };
+  window.viniCanvas = {
+    syncOpenDesignCatalog: (payload) => canvasBackend("sync_open_design_catalog", payload || {}),
+    listDesignSkills: (payload) => canvasBackend("list_design_skills", payload || {}),
+    listDesignSystems: (payload) => canvasBackend("list_design_systems", payload || {}),
+    selectDesignContext: (payload) => canvasBackend("select_design_context", payload || {}),
+    createDesignBrief: (payload) => canvasBackend("create_design_brief", payload || {}),
+    runVisualQa: (payload) => canvasBackend("run_visual_qa", payload || {}),
+    getBuildProof: (payload) => canvasBackend("get_build_proof", payload || {}),
   };
 })();

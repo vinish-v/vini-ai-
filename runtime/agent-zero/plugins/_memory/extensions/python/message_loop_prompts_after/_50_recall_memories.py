@@ -27,6 +27,11 @@ class RecallMemories(Extension):
         if not self.agent:
             return
 
+        if self.agent.get_data("vini_voice_skip_memory_once"):
+            self.agent.set_data(DATA_NAME_TASK, None)
+            self.agent.set_data(DATA_NAME_ITER, loop_data.iteration)
+            return None
+
         set = plugins.get_plugin_config("_memory", self.agent)
         if not set:
             return None

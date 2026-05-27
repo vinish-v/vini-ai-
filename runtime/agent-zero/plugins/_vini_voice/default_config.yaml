@@ -1,14 +1,23 @@
-vad_aggressiveness: 2
-min_voiced_ms: 100
-end_silence_ms: 360
-max_utterance_ms: 12000
-pre_roll_ms: 220
+vad_aggressiveness: 3
+min_voiced_ms: 80
+end_silence_ms: 220
+max_utterance_ms: 7000
+pre_roll_ms: 120
+
+voice_stt:
+  engine: whisper
+  model_size: tiny
+  language: en
+  message_mode: send
+  silence_threshold: 0.3
+  silence_duration: 240
+  waiting_timeout: 120
 
 voice_model:
-  enabled: false
-  provider: groq
-  name: llama-3.3-70b-versatile
-  api_base: ""
+  enabled: true
+  provider: cerebras
+  name: gpt-oss-120b
+  api_base: "https://api.cerebras.ai/v1"
   ctx_length: 8192
   vision: false
   kwargs:
