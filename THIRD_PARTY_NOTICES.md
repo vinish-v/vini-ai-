@@ -10,5 +10,6 @@ Scrapling, or Firecrawl in this change.
 - Browser Use: architecture reference only, MIT.
 - Scrapling: extraction concepts reference only, BSD-3-Clause.
 - Firecrawl: API connector only. Firecrawl server code is AGPL-3.0 and is not copied into Vini AI.
+- Webwright: scripted browser task workspace and rerunnable proof concept reference only, MIT.
 - Google Workspace MCP: MCP preset and Google OAuth setup behavior adapted from
   `taylorwilsdon/google_workspace_mcp`, MIT License, Copyright (c) 2025 Taylor Wilsdon.
