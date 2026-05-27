@@ -974,6 +974,7 @@ const CONNECTOR_ICON_DOMAINS = {
 };
 
 const MCP_PRESET_CONNECTORS = new Set(["gmail", "google-drive", "google-calendar"]);
+const GOOGLE_WORKSPACE_EMAIL_STORAGE_KEY = "vini.googleWorkspaceEmail";
 
 function normalizeQuery(value) {
   return String(value || "").trim().toLowerCase();
@@ -1117,6 +1118,7 @@ const model = {
     if (connector.type === "built-in") return "Open";
     if (this.hasMcpPreset(connector)) {
       const status = this.connectorBackendStatus(connector);
+      if (this.needsGoogleWorkspaceAuth(connector, status)) return "Start Google sign-in";
       if (status?.status === "verified" || status?.status === "configured") return "Refresh Workspace MCP";
       return "Enable Workspace MCP";
     }
@@ -1178,6 +1180,10 @@ const model = {
     return MCP_PRESET_CONNECTORS.has(connector?.id);
   },
 
+  needsGoogleWorkspaceAuth(connector, status = this.connectorBackendStatus(connector)) {
+    return this.hasMcpPreset(connector) && status?.label === "OAuth sign-in needed";
+  },
+
   selectConnector(connector) {
     if (!connector?.id) return;
     this.selectedId = connector.id;
@@ -1198,6 +1204,11 @@ const model = {
       return;
     }
     if (this.hasMcpPreset(connector)) {
+      const status = this.connectorBackendStatus(connector);
+      if (this.needsGoogleWorkspaceAuth(connector, status)) {
+        await this.startGoogleWorkspaceAuth(connector);
+        return;
+      }
       await this.enableMcpConnector(connector);
       return;
     }
@@ -1299,6 +1310,71 @@ const model = {
       }
     } catch (error) {
       this.statusMessage = error?.message || `Could not enable ${connector.name} MCP.`;
+      this.statusTone = "error";
+    } finally {
+      this.enablingMcpConnector = false;
+    }
+  },
+
+  googleWorkspaceServiceName(connector) {
+    if (connector?.id === "google-drive") return "Drive";
+    if (connector?.id === "google-calendar") return "Calendar";
+    return "Gmail";
+  },
+
+  googleWorkspaceStoredEmail(connector) {
+    const users = this.connectorBackendStatus(connector)?.details?.google_credentials?.stored_users;
+    if (Array.isArray(users) && users[0]) return String(users[0]);
+    try {
+      return String(globalThis.localStorage?.getItem(GOOGLE_WORKSPACE_EMAIL_STORAGE_KEY) || "");
+    } catch {
+      return "";
+    }
+  },
+
+  askGoogleWorkspaceEmail(connector) {
+    const existing = this.googleWorkspaceStoredEmail(connector);
+    const value = globalThis.prompt?.(`Google email for ${this.googleWorkspaceServiceName(connector)} OAuth`, existing) || "";
+    const email = value.trim();
+    if (email) {
+      try {
+        globalThis.localStorage?.setItem(GOOGLE_WORKSPACE_EMAIL_STORAGE_KEY, email);
+      } catch {}
+    }
+    return email;
+  },
+
+  async startGoogleWorkspaceAuth(connector = this.selectedConnector) {
+    if (!connector?.id) return;
+    const userGoogleEmail = this.askGoogleWorkspaceEmail(connector);
+    if (!userGoogleEmail) {
+      this.statusMessage = "Google OAuth needs the Google account email before Vini AI can open consent.";
+      this.statusTone = "error";
+      return;
+    }
+    this.enablingMcpConnector = true;
+    this.statusMessage = `Starting ${connector.name} Google OAuth in your Windows browser.`;
+    this.statusTone = "info";
+    try {
+      const response = await API.callJsonApi("/plugins/_connectors/mcp_preset", {
+        connector_id: connector.id,
+        operation: "start_auth",
+        user_google_email: userGoogleEmail,
+        force: true,
+      });
+      const authUrl = String(response?.auth_url || "").trim();
+      if (authUrl) {
+        await this.openExternal(authUrl);
+        this.statusMessage = `Opened Google OAuth for ${connector.name} in your Windows browser. Complete consent there, then refresh this connector.`;
+        this.statusTone = "info";
+        await this.refreshConnectorStatuses();
+        return;
+      }
+      this.statusMessage = response?.message || `Google OAuth did not return a sign-in URL for ${connector.name}.`;
+      this.statusTone = response?.ok ? "info" : "error";
+      await this.refreshConnectorStatuses();
+    } catch (error) {
+      this.statusMessage = error?.message || `Could not start Google OAuth for ${connector.name}.`;
       this.statusTone = "error";
     } finally {
       this.enablingMcpConnector = false;

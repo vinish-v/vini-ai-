@@ -890,6 +890,9 @@ def _filter_google_workspace_tools(connector_id: str, tools: list[dict[str, Any]
         short = str(tool.get("tool") or "").strip().lower()
         full = str(tool.get("name") or "").strip().lower()
         description = str(tool.get("description") or "").strip().lower()
+        if short == "start_google_auth" or full.endswith(".start_google_auth"):
+            result.append(tool)
+            continue
         if any(
             short.startswith(prefix)
             or f".{prefix}" in full
