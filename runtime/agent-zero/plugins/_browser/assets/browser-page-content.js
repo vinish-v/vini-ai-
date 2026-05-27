@@ -1,7 +1,7 @@
 (() => {
   const GLOBAL_KEY = "__spaceBrowserPageContent__";
   const DOM_HELPER_KEY = "__spaceBrowserDomHelper__";
-  const VERSION = "12";
+  const VERSION = "13";
   const REQUIRED_API_NAMES = Object.freeze([
     "annotate",
     "boundingBoxFor",
@@ -14,9 +14,11 @@
     "scroll",
     "select",
     "setChecked",
+    "stateSummary",
     "submit",
     "type",
-    "typeSubmit"
+    "typeSubmit",
+    "validateReference"
   ]);
 
   function patchOpenShadowDom() {
@@ -2373,6 +2375,214 @@
     };
   }
 
+  function isEditableReferenceElement(element) {
+    if (!isElementNode(element)) {
+      return false;
+    }
+    const tagName = getTagName(element);
+    if (tagName === "TEXTAREA") {
+      return !element.disabled && !element.readOnly;
+    }
+    if (tagName === "INPUT") {
+      const type = String(element.getAttribute?.("type") || element.type || "text").toLowerCase();
+      return !["button", "checkbox", "color", "file", "hidden", "image", "radio", "range", "reset", "submit"].includes(type)
+        && !element.disabled
+        && !element.readOnly;
+    }
+    if (tagName === "SELECT") {
+      return !element.disabled;
+    }
+    return String(element.getAttribute?.("contenteditable") || "").toLowerCase() === "true"
+      || String(element.getAttribute?.("role") || "").toLowerCase() === "textbox"
+      || String(element.getAttribute?.("role") || "").toLowerCase() === "searchbox";
+  }
+
+  function validateReference(referenceId, options = {}) {
+    const actionLabel = String(options?.action || "action").trim() || "action";
+    let entry = null;
+    try {
+      entry = requireReferenceEntry(referenceId, {
+        actionLabel,
+        requireConnected: false
+      });
+    } catch (error) {
+      return {
+        ok: false,
+        exists: false,
+        connected: false,
+        visible: false,
+        enabled: false,
+        editable: false,
+        reason: error?.message || String(error || "reference lookup failed"),
+        code: error?.code || "browser_reference_lookup_failed",
+        referenceId: normalizeReferenceId(referenceId)
+      };
+    }
+
+    if (entry.helperBacked || !entry.element) {
+      return {
+        ok: true,
+        exists: true,
+        connected: true,
+        visible: true,
+        enabled: true,
+        editable: false,
+        helperBacked: true,
+        reason: "",
+        referenceId: entry.referenceId,
+        summary: entry.summary,
+        tagName: entry.tagName
+      };
+    }
+
+    const element = entry.element;
+    const metadata = collectElementStateMetadata(element, state.captureOptions);
+    const rect = getElementRectSafe(element);
+    const hasBox = Boolean(rect && rect.width > 0 && rect.height > 0);
+    const connected = Boolean(entry.connected && element.isConnected);
+    const visible = Boolean(connected && metadata.visible && hasBox);
+    const enabled = Boolean(visible && !metadata.disabled && !metadata.blocked && !metadata.pointerEventsNone);
+    const editable = isEditableReferenceElement(element);
+    const needsEditable = ["type", "type_submit", "select_option", "set_checked", "upload_file"].includes(actionLabel);
+    const ok = Boolean(enabled && (!needsEditable || editable || actionLabel === "set_checked"));
+    const selector = computeStableSelector(element);
+    const point = visible
+      ? {
+        x: rect.x + rect.width / 2,
+        y: rect.y + rect.height / 2
+      }
+      : null;
+    const reason = ok
+      ? ""
+      : !connected
+        ? "reference is no longer attached to the current page"
+        : !visible
+          ? "reference is not visible in the viewport"
+          : !enabled
+            ? "reference is disabled, blocked, or cannot receive pointer events"
+            : "reference is not editable for this action";
+    return {
+      ok,
+      exists: true,
+      connected,
+      visible,
+      enabled,
+      editable,
+      helperBacked: false,
+      reason,
+      code: ok ? "" : "browser_reference_validation_failed",
+      referenceId: entry.referenceId,
+      captureId: state.captureId,
+      capturedAt: state.capturedAt,
+      point,
+      rect,
+      selector,
+      state: metadata,
+      summary: entry.summary,
+      tagName: entry.tagName
+    };
+  }
+
+  function summarizeForm(form, index) {
+    const controls = [...(form.elements || [])]
+      .filter((element) => isElementNode(element) && !isHiddenElement(element))
+      .slice(0, 24)
+      .map((element) => {
+        const summaryData = collectReferenceSummaryData(element, {
+          includeLabelQuotes: false,
+          includeLinkUrls: false,
+          includeSemanticTags: true,
+          includeStateTags: true
+        });
+        return {
+          kind: summaryData.kind,
+          name: normalizeAttributeText(element.getAttribute?.("name")),
+          placeholder: normalizeAttributeText(element.getAttribute?.("placeholder")),
+          required: Boolean(element.required || element.getAttribute?.("aria-required") === "true"),
+          summary: truncateText(summaryData.summary, 160),
+          tagName: getTagName(element),
+          type: normalizeAttributeText(element.getAttribute?.("type") || element.type || "")
+        };
+      });
+    return {
+      action: summarizeUrl(form.getAttribute?.("action") || ""),
+      controlCount: controls.length,
+      controls,
+      id: normalizeAttributeText(form.getAttribute?.("id")),
+      index,
+      method: normalizeAttributeText(form.getAttribute?.("method") || "get").toLowerCase()
+    };
+  }
+
+  function focusedElementSummary() {
+    let element = globalThis.document?.activeElement || null;
+    while (element?.shadowRoot?.activeElement) {
+      element = element.shadowRoot.activeElement;
+    }
+    if (!isElementNode(element) || element === globalThis.document?.body || element === globalThis.document?.documentElement) {
+      return null;
+    }
+    const summaryData = collectReferenceSummaryData(element, {
+      includeLabelQuotes: false,
+      includeLinkUrls: true,
+      includeSemanticTags: true,
+      includeStateTags: true
+    });
+    return {
+      kind: summaryData.kind,
+      rect: getElementRectSafe(element),
+      selector: computeStableSelector(element),
+      state: summaryData.state,
+      summary: truncateText(summaryData.summary, 180),
+      tagName: getTagName(element)
+    };
+  }
+
+  async function stateSummary(payload = null) {
+    const options = payload && typeof payload === "object" ? payload : {};
+    await capture({
+      includeLinkUrls: options.includeLinkUrls === true,
+      includeSemanticTags: true,
+      includeStateTags: true
+    });
+    const interactive = [...state.entries.values()]
+      .slice(0, Number(options.limit || 40))
+      .map((entry) => ({
+        descriptorTags: Array.isArray(entry.descriptorTags) ? entry.descriptorTags.slice(0, 8) : [],
+        kind: entry.kind || "",
+        referenceId: entry.referenceId,
+        semanticTags: Array.isArray(entry.semanticTags) ? entry.semanticTags.slice(0, 4) : [],
+        state: entry.state || {},
+        summary: truncateText(entry.summary, 180),
+        tagName: entry.tagName
+      }));
+    const forms = [...(globalThis.document?.forms || [])]
+      .slice(0, 12)
+      .map((form, index) => summarizeForm(form, index));
+    return {
+      captureId: state.captureId,
+      capturedAt: state.capturedAt,
+      focusedElement: focusedElementSummary(),
+      forms,
+      interactive,
+      interactiveCount: state.entries.size,
+      meta: {
+        description: normalizeAttributeText(globalThis.document?.querySelector?.('meta[name="description"]')?.getAttribute?.("content") || ""),
+        title: normalizeAttributeText(globalThis.document?.title || ""),
+        url: String(globalThis.location?.href || "")
+      },
+      readyState: String(globalThis.document?.readyState || ""),
+      scroll: {
+        x: Number(globalThis.scrollX || globalThis.pageXOffset || 0),
+        y: Number(globalThis.scrollY || globalThis.pageYOffset || 0)
+      },
+      viewport: {
+        height: Math.max(0, Number(globalThis.innerHeight || globalThis.document?.documentElement?.clientHeight || 0)),
+        width: Math.max(0, Number(globalThis.innerWidth || globalThis.document?.documentElement?.clientWidth || 0))
+      }
+    };
+  }
+
   function normalizeActionValues(valueOrValues) {
     if (Array.isArray(valueOrValues)) {
       return valueOrValues.map((value) => String(value ?? ""));
@@ -3989,6 +4199,7 @@
     scroll(referenceId) {
       return scrollToReference(referenceId);
     },
+    stateSummary,
     submit(referenceId) {
       return submitElement(referenceId);
     },
@@ -4002,6 +4213,7 @@
     fileInputElementFor,
     fileInputFor,
     pointFor,
+    validateReference,
     select(referenceId, valueOrValues) {
       return selectReference(referenceId, valueOrValues);
     },

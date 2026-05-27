@@ -13,11 +13,16 @@ class Message(ApiHandler):
         return await self.respond(task, context)
 
     async def respond(self, task: DeferredTask, context: AgentContext):
-        result = await task.result()  # type: ignore
-        return {
-            "message": result,
-            "context": context.id,
-        }
+        try:
+            result = await task.result()  # type: ignore
+            return {
+                "message": result,
+                "context": context.id,
+            }
+        finally:
+            agent = context.get_agent()
+            if agent.get_data("vini_voice_skip_memory_once"):
+                agent.set_data("vini_voice_skip_memory_once", False)
 
     async def communicate(self, input: dict, request: Request):
         voice_mode = False
@@ -69,6 +74,7 @@ class Message(ApiHandler):
         context = self.use_context(ctxid)
         if voice_mode:
             context.get_agent().set_data("vini_voice_fast_once", True)
+            context.get_agent().set_data("vini_voice_skip_memory_once", True)
 
         # call extension point, alow it to modify data
         data = { "message": message, "attachment_paths": attachment_paths }

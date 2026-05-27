@@ -19,7 +19,7 @@ AUTH_BY_UI_TYPE = {
     "plugin": "plugin",
 }
 
-READ_ACTIONS = {"status", "search", "read", "browser_action"}
+READ_ACTIONS = {"status", "search", "read", "browser_action", "scrape", "crawl", "map", "batch_scrape", "interact"}
 RISKY_ACTIONS = {"create", "update", "send", "delete"}
 ALL_ACTIONS = [
     "status",
@@ -30,7 +30,15 @@ ALL_ACTIONS = [
     "send",
     "delete",
     "browser_action",
+    "scrape",
+    "crawl",
+    "map",
+    "batch_scrape",
+    "interact",
 ]
+
+GOOGLE_WORKSPACE_CONNECTORS = {"gmail", "google-drive", "google-calendar"}
+GOOGLE_WORKSPACE_MCP_NAMES = {"google-workspace", "google_workspace", "workspace-mcp", "workspace_mcp"}
 
 
 @dataclass(frozen=True)
@@ -197,6 +205,13 @@ async def run_action_async(
     normalized_action = str(action or "").strip().lower()
     payload = payload if isinstance(payload, dict) else {}
     manifest = get_connector(connector_id)
+    if manifest and manifest.id in GOOGLE_WORKSPACE_CONNECTORS:
+        current = _status_for(manifest)
+        if current["status"] in {"configured", "verified"}:
+            if normalized_action in RISKY_ACTIONS and not confirmed:
+                return _confirmation_required(manifest, normalized_action, payload, current)
+            return await _run_mcp_action(manifest, normalized_action, payload, current)
+        return run_action(normalized_action, connector_id, payload, confirmed=confirmed)
     if not manifest or manifest.auth != "mcp":
         return run_action(normalized_action, connector_id, payload, confirmed=confirmed)
 
@@ -261,13 +276,32 @@ def _built_in_status(manifest: ConnectorManifest) -> dict[str, Any]:
 def _api_key_status(manifest: ConnectorManifest) -> dict[str, Any]:
     found, missing = _configured_env_keys(manifest)
     adapter_actions = action_adapters.supported_actions(manifest.id)
+    extra_details: dict[str, Any] = {}
+    if manifest.id == "firecrawl":
+        env = _combined_env()
+        base_url = str(env.get("FIRECRAWL_API_URL") or env.get("FIRECRAWL_BASE_URL") or "https://api.firecrawl.dev/v2")
+        extra_details = {
+            "api_base": base_url.rstrip("/"),
+            "hosted_api_configured": "api.firecrawl.dev" in base_url,
+            "self_host_url_configured": bool(base_url and "api.firecrawl.dev" not in base_url),
+            "api_version": "v2",
+            "provider_states": [
+                "not_configured",
+                "configured_unverified",
+                "auth_failed_or_forbidden",
+                "quota_exhausted",
+                "rate_limited",
+                "endpoint_not_found",
+                "provider_unavailable",
+            ],
+        }
     if missing:
         return _base_status(
             manifest,
             "not_configured",
             "Needs API key",
             f"{manifest.name} needs {', '.join(missing)} in Vini AI secrets, variables, or process environment.",
-            details={"found_keys": found, "missing_keys": missing, "adapter_actions": adapter_actions},
+            details={"found_keys": found, "missing_keys": missing, "adapter_actions": adapter_actions, **extra_details},
         )
     return _base_status(
         manifest,
@@ -277,11 +311,15 @@ def _api_key_status(manifest: ConnectorManifest) -> dict[str, Any]:
             f"{manifest.name} credentials exist. Agent actions can use a service-specific adapter when available, "
             "or an explicit official API URL through the generic HTTP adapter."
         ),
-        details={"found_keys": found, "adapter_actions": adapter_actions, "generic_http": True},
+        details={"found_keys": found, "adapter_actions": adapter_actions, "generic_http": True, **extra_details},
     )
 
 
 def _oauth_status(manifest: ConnectorManifest) -> dict[str, Any]:
+    if manifest.id in GOOGLE_WORKSPACE_CONNECTORS:
+        workspace_status = _google_workspace_mcp_status(manifest)
+        if workspace_status:
+            return workspace_status
     return _base_status(
         manifest,
         "unsupported_action",
@@ -291,6 +329,77 @@ def _oauth_status(manifest: ConnectorManifest) -> dict[str, Any]:
             "Vini can open the real site in the browser as a fallback, but API actions are not connected."
         ),
         details={"auth_url": manifest.auth_url, "browser_fallback_available": bool(manifest.auth_url)},
+    )
+
+
+def _google_workspace_mcp_status(manifest: ConnectorManifest) -> dict[str, Any] | None:
+    mcp = _load_mcp_servers()
+    servers = mcp.get("mcpServers") if isinstance(mcp, dict) else {}
+    if not isinstance(servers, dict) or not any(_google_workspace_name_matches(str(name)) for name in servers.keys()):
+        return None
+
+    runtime = _mcp_runtime_snapshot()
+    runtime_matches = [
+        server
+        for server in runtime.get("servers", [])
+        if _google_workspace_name_matches(str(server.get("name") or ""))
+    ]
+    matched_names = sorted(
+        set(
+            [str(name) for name in servers.keys() if _google_workspace_name_matches(str(name))]
+            + [str(item.get("name")) for item in runtime_matches if item.get("name")]
+        )
+    )
+    tools = _mcp_tools_for_names(matched_names, runtime.get("tools", []))
+    service_tools = _filter_google_workspace_tools(manifest.id, tools)
+    credential_users = _google_workspace_credential_users(servers)
+    errors = [item for item in runtime_matches if item.get("error")]
+    if service_tools:
+        if not credential_users:
+            return _base_status(
+                manifest,
+                "configured",
+                "OAuth sign-in needed",
+                (
+                    f"{manifest.name} MCP tools are available, but no Google account OAuth token is stored yet. "
+                    "Run a Google Workspace tool with user_google_email and complete the Google consent flow."
+                ),
+                details={
+                    "mcp_preset": "google-workspace",
+                    "matching_servers": matched_names,
+                    "mcp_tools": service_tools,
+                    "google_credentials": {"stored_users": [], "count": 0},
+                    **runtime,
+                },
+            )
+        return _base_status(
+            manifest,
+            "verified",
+            "Ready for agent",
+            f"{manifest.name} is ready through the Google Workspace MCP server with {len(service_tools)} matching tool(s) and stored Google OAuth credentials.",
+            verified=True,
+            details={
+                "mcp_preset": "google-workspace",
+                "matching_servers": matched_names,
+                "mcp_tools": service_tools,
+                "google_credentials": {"stored_users": credential_users, "count": len(credential_users)},
+                **runtime,
+            },
+        )
+    if errors:
+        return _base_status(
+            manifest,
+            "expired",
+            "MCP server error",
+            f"Google Workspace MCP is configured but failed tool discovery: {errors[0].get('error')}",
+            details={"mcp_preset": "google-workspace", "matching_servers": matched_names, "mcp_errors": errors, **runtime},
+        )
+    return _base_status(
+        manifest,
+        "configured",
+        "Credentials saved, not verified",
+        f"Google Workspace MCP is declared for {manifest.name}, but no matching tools have been discovered yet.",
+        details={"mcp_preset": "google-workspace", "matching_servers": matched_names, **runtime},
     )
 
 
@@ -744,7 +853,14 @@ def _matching_mcp_names(manifest: ConnectorManifest, names: Any) -> list[str]:
 
 def _mcp_name_matches(manifest: ConnectorManifest, name: str) -> bool:
     normalized = name.strip().lower().replace("_", "-")
+    if manifest.id in GOOGLE_WORKSPACE_CONNECTORS:
+        return _google_workspace_name_matches(name)
     return manifest.id in normalized or manifest.name.strip().lower().replace(" ", "-") in normalized
+
+
+def _google_workspace_name_matches(name: str) -> bool:
+    normalized = name.strip().lower().replace("_", "-")
+    return normalized in GOOGLE_WORKSPACE_MCP_NAMES or "google-workspace" in normalized or "workspace-mcp" in normalized
 
 
 def _mcp_tools_for_names(names: list[str], tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -759,6 +875,57 @@ def _mcp_tools_for_names(names: list[str], tools: list[dict[str, Any]]) -> list[
         if any(full.startswith(f"{name}.") for name in wanted):
             result.append(tool)
     return result
+
+
+def _filter_google_workspace_tools(connector_id: str, tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    prefixes = {
+        "gmail": ("gmail",),
+        "google-drive": ("drive", "gdrive"),
+        "google-calendar": ("calendar", "gcalendar"),
+    }.get(connector_id, ())
+    if not prefixes:
+        return tools
+    result = []
+    for tool in tools:
+        short = str(tool.get("tool") or "").strip().lower()
+        full = str(tool.get("name") or "").strip().lower()
+        description = str(tool.get("description") or "").strip().lower()
+        if any(
+            short.startswith(prefix)
+            or f".{prefix}" in full
+            or prefix in description[:160]
+            for prefix in prefixes
+        ):
+            result.append(tool)
+    return result
+
+
+def _google_workspace_credential_users(servers: dict[str, Any]) -> list[str]:
+    credential_dirs = []
+    for name, config in servers.items():
+        if not _google_workspace_name_matches(str(name)) or not isinstance(config, dict):
+            continue
+        env = config.get("env") if isinstance(config.get("env"), dict) else {}
+        if env.get("WORKSPACE_MCP_CREDENTIALS_DIR"):
+            credential_dirs.append(str(env["WORKSPACE_MCP_CREDENTIALS_DIR"]))
+        if env.get("GOOGLE_MCP_CREDENTIALS_DIR"):
+            credential_dirs.append(str(env["GOOGLE_MCP_CREDENTIALS_DIR"]))
+    credential_dirs.append("/a0/usr/google_workspace_mcp/credentials")
+
+    users: set[str] = set()
+    for raw_dir in credential_dirs:
+        try:
+            directory = Path(raw_dir).expanduser()
+            if not directory.exists() or not directory.is_dir():
+                continue
+            for item in directory.glob("*.json"):
+                user = item.stem
+                if user in {"oauth_states"} or "@" not in user:
+                    continue
+                users.add(user)
+        except Exception:
+            continue
+    return sorted(users)
 
 
 def _resolve_mcp_tool_name(manifest: ConnectorManifest, tool_name: str) -> str:

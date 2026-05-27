@@ -124,6 +124,20 @@ class Browser(Tool):
                 result = await runtime.call("list", include_content=bool(include_content))
             elif action == "state":
                 result = await runtime.call("state", browser_id)
+            elif action == "observe":
+                result = await runtime.call(
+                    "observe",
+                    browser_id,
+                    include_screenshot=bool(kwargs.get("include_screenshot", False)),
+                    include_content=kwargs.get("include_content", True) is not False,
+                )
+            elif action in {"validate_ref", "validate"}:
+                result = await runtime.call(
+                    "validate_ref",
+                    browser_id,
+                    await self._resolve_ref(runtime, browser_id, ref, selector, action),
+                    action=str(kwargs.get("target_action") or kwargs.get("targetAction") or "action"),
+                )
             elif action in {"set_active", "setactive", "activate", "focus"}:
                 result = await runtime.call("set_active", browser_id)
             elif action == "navigate":

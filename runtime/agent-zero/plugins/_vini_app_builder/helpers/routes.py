@@ -22,6 +22,10 @@ def register_routes(app: Flask) -> None:
     async def export_project(project_id: str):
         return builder.download_export(project_id)
 
+    @requires_auth
+    async def qa_artifact(project_id: str, subpath: str):
+        return builder.serve_qa_artifact(project_id, subpath)
+
     app.add_url_rule(
         "/vini-preview/<project_id>/",
         "vini_app_builder_preview_root",
@@ -38,6 +42,12 @@ def register_routes(app: Flask) -> None:
         "/vini-builder/export/<project_id>",
         "vini_app_builder_export",
         export_project,
+        methods=["GET"],
+    )
+    app.add_url_rule(
+        "/vini-builder/qa/<project_id>/<path:subpath>",
+        "vini_app_builder_qa_artifact",
+        qa_artifact,
         methods=["GET"],
     )
     app._vini_app_builder_routes_registered = True

@@ -11,10 +11,10 @@ from plugins._model_config.helpers import model_config
 
 VOICE_CONFIG_PATH = "usr/plugins/_vini_voice/config.json"
 DEFAULT_VOICE_MODEL = {
-    "enabled": False,
-    "provider": "groq",
-    "name": "llama-3.3-70b-versatile",
-    "api_base": "",
+    "enabled": True,
+    "provider": "cerebras",
+    "name": "gpt-oss-120b",
+    "api_base": "https://api.cerebras.ai/v1",
     "ctx_length": 8192,
     "vision": False,
     "kwargs": {
@@ -79,4 +79,10 @@ class VoiceFastLimits(Extension):
             call_kwargs["max_tokens"] = 128
 
         call_kwargs.setdefault("temperature", 0.35)
-        call_kwargs.setdefault("a0_retry_attempts", 0)
+        call_kwargs.setdefault("a0_retry_attempts", 1)
+        call_kwargs.setdefault("a0_retry_delay_seconds", 0.15)
+        if (
+            str(voice_cfg.get("provider", "")).lower() == "cerebras"
+            and str(voice_cfg.get("name", "")) != "llama3.1-8b"
+        ):
+            call_kwargs.setdefault("a0_fallback_models", ["cerebras/llama3.1-8b"])
