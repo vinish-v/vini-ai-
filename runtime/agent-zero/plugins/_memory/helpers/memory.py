@@ -69,6 +69,7 @@ class Memory:
     async def get(agent: Agent):
         memory_subdir = get_agent_memory_subdir(agent)
         if agent.get_data("vini_voice_skip_memory_once"):
+            PrintStyle.info("[vini_voice] memory skipped for voice turn")
             return Memory(db=None, memory_subdir=memory_subdir, disabled=True)
 
         if Memory.index.get(memory_subdir) is None:
