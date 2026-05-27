@@ -168,11 +168,12 @@ function requestHealth(url: string): Promise<HealthStatus> {
 }
 
 async function listRecentEntries(paths: RuntimePaths): Promise<RecentEntry[]> {
+  const chatsDir = path.join(paths.usrDir, "chats");
   const candidates = [
     paths.usrDir,
     path.join(paths.usrDir, "workdir"),
     path.join(paths.usrDir, "projects"),
-    path.join(paths.usrDir, "chats"),
+    chatsDir,
     path.join(paths.usrDir, "memory")
   ];
 
@@ -186,11 +187,18 @@ async function listRecentEntries(paths: RuntimePaths): Promise<RecentEntry[]> {
       for (const child of children) {
         const fullPath = path.join(candidate, child.name);
         const stats = await fs.stat(fullPath);
+        const isChatContext = candidate === chatsDir && child.isDirectory();
+        const chatData = isChatContext ? await readJsonFile(path.join(fullPath, "chat.json")) : null;
+        const contextId = isChatContext ? String(chatData?.id || child.name) : undefined;
+        const contextName = typeof chatData?.name === "string" && chatData.name.trim() ? chatData.name.trim() : undefined;
         entries.push({
-          name: child.name,
+          name: contextName || child.name,
           path: fullPath,
           kind: child.isDirectory() ? "directory" : "file",
-          modifiedAt: stats.mtime.toISOString()
+          modifiedAt: stats.mtime.toISOString(),
+          contextId,
+          contextName,
+          openUrl: contextId ? `${RUNTIME_URL}/?ctxid=${encodeURIComponent(contextId)}` : undefined
         });
       }
     } catch {
@@ -633,6 +641,15 @@ export class RuntimeManager {
 
   async openRuntime(): Promise<void> {
     await shell.openExternal(RUNTIME_URL);
+  }
+
+  async openContext(contextId: string): Promise<void> {
+    const cleanContextId = String(contextId || "").trim();
+    if (!cleanContextId) {
+      await this.openRuntime();
+      return;
+    }
+    await shell.openExternal(`${RUNTIME_URL}/?ctxid=${encodeURIComponent(cleanContextId)}`);
   }
 
   async openDataDir(): Promise<void> {

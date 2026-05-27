@@ -109,6 +109,7 @@ function registerIpcHandlers(): void {
   ipcMain.handle("runtime:restart", () => runtimeManager.restart());
   ipcMain.handle("runtime:logs", () => runtimeManager.logs());
   ipcMain.handle("runtime:open", () => runtimeManager.openRuntime());
+  ipcMain.handle("runtime:openContext", (_event, contextId) => runtimeManager.openContext(String(contextId || "")));
   ipcMain.handle("runtime:openDataDir", () => runtimeManager.openDataDir());
   ipcMain.handle("runtime:openRuntimeDir", () => runtimeManager.openRuntimeDir());
   ipcMain.handle("app:openExternal", async (_event, url) => {

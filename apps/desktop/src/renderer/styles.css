@@ -409,6 +409,22 @@ button {
   padding: 8px 0;
 }
 
+.activity-button {
+  width: 100%;
+  color: inherit;
+  background: transparent;
+  border-top: 0;
+  border-right: 0;
+  border-left: 0;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.activity-button:hover {
+  background: #121212;
+}
+
 .activity-row span,
 .activity-row time {
   color: #9999a0;
