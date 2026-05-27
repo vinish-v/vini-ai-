@@ -1,6 +1,9 @@
 FROM agent0ai/agent-zero:latest
 
 COPY agent-zero/ /a0/
+COPY agent-zero/plugins/_browser/helpers/extraction.py /a0/plugins/_browser/helpers/extraction.py
+COPY agent-zero/tools/extract_page.py /a0/tools/extract_page.py
+COPY agent-zero/prompts/agent.system.tool.extract_page.md /a0/prompts/agent.system.tool.extract_page.md
 COPY agent-zero/plugins/_vini_canvas/ /a0/plugins/_vini_canvas/
 COPY agent-zero/plugins/_vini_canvas/ /opt/vini-bundled-plugins/_vini_canvas/
 RUN test -f /a0/plugins/_vini_canvas/api/backend.py && grep -q "_run_playwright_screenshot_qa" /a0/plugins/_vini_canvas/api/backend.py

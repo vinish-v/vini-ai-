@@ -1752,12 +1752,14 @@ def collect_desktop_status() -> dict[str, Any]:
     healthy = not missing
     preparation = _runtime_preparation_status()
     installing = bool(preparation.get("preparing")) and not healthy
+    readiness = _desktop_readiness_snapshot(healthy=healthy, missing=missing)
     return {
         "ok": True,
         "healthy": healthy,
         "state": "healthy" if healthy else "installing" if installing else "missing",
         "installing": installing,
         "missing": missing,
+        "readiness": readiness,
         "preparation": preparation,
         "binaries": binaries,
         "xpra_html_root": str(desktop.get("xpra_html_root") or ""),
@@ -1769,6 +1771,77 @@ def collect_desktop_status() -> dict[str, Any]:
             else f"Vini AI Desktop sessions need: {', '.join(missing)}."
         ),
     }
+
+
+def _desktop_readiness_snapshot(*, healthy: bool, missing: list[str]) -> dict[str, Any]:
+    blockers: list[dict[str, str]] = []
+    if missing:
+        blockers.append(
+            {
+                "code": "desktop_dependencies_missing",
+                "severity": "error",
+                "message": f"Missing Desktop runtime dependencies: {', '.join(missing)}.",
+            }
+        )
+    manifest_exists = desktop_state.session_manifest_exists(SYSTEM_SESSION_ID)
+    snapshot: dict[str, Any] = {
+        "ready": bool(healthy and manifest_exists),
+        "session_manifest_exists": manifest_exists,
+        "active_window": None,
+        "display": "",
+        "screenshot": {"ok": False, "recent": False, "captured_at": "", "path": ""},
+        "screenshot_fresh": False,
+        "visible_window_count": 0,
+        "blockers": blockers,
+    }
+    if not manifest_exists:
+        snapshot["blockers"].append(
+            {
+                "code": "desktop_session_not_started",
+                "severity": "warning" if healthy else "error",
+                "message": "Open the Desktop canvas to start the internal Linux/Xpra session.",
+            }
+        )
+        return snapshot
+    try:
+        state = desktop_state.collect_state(include_screenshot=False)
+    except Exception as exc:
+        snapshot["blockers"].append(
+            {
+                "code": "desktop_state_unavailable",
+                "severity": "error",
+                "message": str(exc),
+            }
+        )
+        return snapshot
+    screenshot = state.get("screenshot") if isinstance(state.get("screenshot"), dict) else {}
+    snapshot.update(
+        {
+            "ready": bool(healthy and state.get("ok")),
+            "active_window": state.get("active_window"),
+            "display": state.get("display") or "",
+            "screenshot": screenshot,
+            "screenshot_fresh": bool(screenshot.get("recent")),
+            "visible_window_count": len(state.get("windows") or []),
+        }
+    )
+    for error in state.get("errors") or []:
+        snapshot["blockers"].append(
+            {
+                "code": "desktop_state_error",
+                "severity": "error",
+                "message": str(error),
+            }
+        )
+    if healthy and not screenshot.get("recent"):
+        snapshot["blockers"].append(
+            {
+                "code": "desktop_screenshot_stale",
+                "severity": "warning",
+                "message": "No fresh Desktop screenshot is available yet; run a Desktop observe/screenshot before coordinate actions.",
+            }
+        )
+    return snapshot
 
 
 def _state_path_from_retired_root(path: Path) -> Path:

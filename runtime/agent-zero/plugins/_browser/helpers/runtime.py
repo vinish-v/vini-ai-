@@ -564,6 +564,8 @@ class _BrowserRuntimeCore:
         self._closing = False
         self._pending_popups: list[asyncio.Future[int]] = []
         self._background_popup_pages: set[int] = set()
+        self._action_history: list[dict[str, Any]] = []
+        self._page_events: dict[int, list[dict[str, Any]]] = {}
 
     def _ensure_registry_lock(self) -> asyncio.Lock:
         if self._registry_lock is None:
@@ -989,6 +991,17 @@ class _BrowserRuntimeCore:
             return await self.list(include_content=bool(call.get("include_content")))
         if action == "state":
             return await self.state(bid)
+        if action == "observe":
+            return await self.observe(
+                bid,
+                include_screenshot=bool(call.get("include_screenshot")),
+                include_content=call.get("include_content") is not False,
+            )
+        if action == "validate_ref":
+            ref = call.get("ref")
+            if ref is None:
+                raise ValueError("validate_ref requires ref")
+            return await self.validate_ref(bid, ref, action=str(call.get("target_action") or "action"))
         if action in {"set_active", "setactive", "activate", "focus"}:
             return await self.set_active(bid)
         if action == "navigate":
@@ -1197,6 +1210,62 @@ class _BrowserRuntimeCore:
     async def state(self, browser_id: int | str | None = None) -> dict[str, Any]:
         await self.ensure_started()
         return await self._state(self._resolve_browser_id(browser_id))
+
+    async def observe(
+        self,
+        browser_id: int | str | None = None,
+        *,
+        include_screenshot: bool = False,
+        include_content: bool = True,
+    ) -> dict[str, Any]:
+        await self.ensure_started()
+        resolved_id = self._resolve_browser_id(browser_id)
+        page = self._page(resolved_id)
+        await self._ensure_content_helper(page)
+        summary = await page.evaluate(
+            "(payload) => globalThis.__spaceBrowserPageContent__.stateSummary(payload || null)",
+            {"limit": 60, "includeLinkUrls": True},
+        )
+        state = await self._state(resolved_id)
+        payload: dict[str, Any] = {
+            "ok": True,
+            "state": state,
+            "summary": summary or {},
+            "page_events": self._recent_page_events(resolved_id),
+            "action_history": self._recent_action_history(browser_id=resolved_id),
+            "navigation": {
+                "url": state.get("currentUrl"),
+                "title": state.get("title"),
+                "loading": state.get("loading"),
+                "canGoBack": state.get("canGoBack"),
+                "canGoForward": state.get("canGoForward"),
+            },
+        }
+        if include_content:
+            with contextlib.suppress(Exception):
+                payload["content"] = await self.content(resolved_id)
+        if include_screenshot:
+            with contextlib.suppress(Exception):
+                payload["screenshot"] = await self.screenshot(resolved_id)
+        self._maybe_promote(resolved_id)
+        return payload
+
+    async def validate_ref(
+        self,
+        browser_id: int | str | None,
+        reference_id: int | str,
+        *,
+        action: str = "action",
+    ) -> dict[str, Any]:
+        await self.ensure_started()
+        resolved_id = self._resolve_browser_id(browser_id)
+        page = self._page(resolved_id)
+        await self._ensure_content_helper(page)
+        result = await page.evaluate(
+            "(args) => globalThis.__spaceBrowserPageContent__.validateReference(args.ref, { action: args.action })",
+            {"ref": reference_id, "action": str(action or "action")},
+        )
+        return result or {"ok": False, "reason": "validation returned no result", "referenceId": str(reference_id)}
 
     async def navigate(self, browser_id: int | str | None, url: str) -> dict[str, Any]:
         await self.ensure_started()
@@ -2143,6 +2212,21 @@ class _BrowserRuntimeCore:
         resolved_id = self._resolve_browser_id(browser_id)
         page = self._page(resolved_id)
         await self._ensure_content_helper(page)
+        target_action = self._target_action_label(helper_method)
+        validation = await self._validate_reference_for_action(page, reference_id, target_action)
+        if not validation.get("ok"):
+            self._remember_action(
+                target_action,
+                browser_id=resolved_id,
+                ok=False,
+                ref=reference_id,
+                error=str(validation.get("reason") or "reference validation failed"),
+                validation=validation,
+            )
+            raise RepairableException(
+                f"Browser {target_action} target validation failed for ref {reference_id!r}: "
+                f"{validation.get('reason') or 'target is not actionable'}"
+            )
         point: dict[str, Any] | None = None
         with contextlib.suppress(Exception):
             point = await page.evaluate(
@@ -2164,7 +2248,16 @@ class _BrowserRuntimeCore:
         action_payload = action if isinstance(action, dict) else {}
         if point and "point" not in action_payload:
             action_payload = {**action_payload, "point": point}
-        return {"action": action_payload, "state": await self._state(resolved_id)}
+        state = await self._state(resolved_id)
+        self._remember_action(
+            target_action,
+            browser_id=resolved_id,
+            ok=True,
+            ref=reference_id,
+            url=state.get("currentUrl"),
+            validation=validation,
+        )
+        return {"action": action_payload, "state": state, "validation": validation}
 
     async def _goto(self, page: Any, url: str) -> None:
         from playwright.async_api import Error as PlaywrightError
@@ -2222,6 +2315,7 @@ class _BrowserRuntimeCore:
         self.next_browser_id += 1
         browser_page = BrowserPage(id=browser_id, page=page)
         self.pages[browser_id] = browser_page
+        self._page_events.setdefault(browser_id, [])
 
         def on_close() -> None:
             try:
@@ -2231,6 +2325,19 @@ class _BrowserRuntimeCore:
                 self.pages.pop(browser_id, None)
 
         page.on("close", on_close)
+        page.on("pageerror", lambda error: self._remember_page_event(browser_id, "pageerror", str(error), getattr(page, "url", "")))
+        page.on("requestfailed", lambda request: self._remember_page_event(
+            browser_id,
+            "requestfailed",
+            self._request_failure_message(request),
+            getattr(request, "url", ""),
+        ))
+        page.on("console", lambda message: self._remember_page_event(
+            browser_id,
+            "console",
+            f"{getattr(message, 'type', '')}: {getattr(message, 'text', '')}",
+            getattr(page, "url", ""),
+        ))
         return browser_page
 
     async def _register_page(self, page: Any) -> BrowserPage:
@@ -2243,6 +2350,7 @@ class _BrowserRuntimeCore:
             lock = self._ensure_registry_lock()
             async with lock:
                 self.pages.pop(browser_id, None)
+                self._page_events.pop(browser_id, None)
                 if self.last_interacted_browser_id == browser_id:
                     self.last_interacted_browser_id = next(iter(sorted(self.pages)), None)
                 self._background_popup_pages.discard(browser_id)
@@ -2342,6 +2450,105 @@ class _BrowserRuntimeCore:
         if self._content_helper_source is None:
             self._content_helper_source = CONTENT_HELPER_PATH.read_text(encoding="utf-8")
         await page.evaluate(self._content_helper_source)
+
+    async def _validate_reference_for_action(
+        self,
+        page: Any,
+        reference_id: int | str,
+        action: str,
+    ) -> dict[str, Any]:
+        try:
+            validation = await page.evaluate(
+                "(args) => globalThis.__spaceBrowserPageContent__.validateReference(args.ref, { action: args.action })",
+                {"ref": reference_id, "action": action},
+            )
+            return validation if isinstance(validation, dict) else {
+                "ok": False,
+                "reason": "reference validation returned no structured result",
+                "referenceId": str(reference_id),
+            }
+        except Exception as exc:
+            return {
+                "ok": False,
+                "reason": str(exc),
+                "referenceId": str(reference_id),
+                "code": "browser_reference_validation_error",
+            }
+
+    @staticmethod
+    def _target_action_label(helper_method: str) -> str:
+        mapping = {
+            "click": "click",
+            "scroll": "scroll",
+            "submit": "submit",
+            "type": "type",
+            "typeSubmit": "type_submit",
+        }
+        return mapping.get(str(helper_method or ""), str(helper_method or "action"))
+
+    def _remember_action(
+        self,
+        action: str,
+        *,
+        browser_id: int,
+        ok: bool,
+        ref: int | str | None = None,
+        url: str = "",
+        error: str = "",
+        validation: dict[str, Any] | None = None,
+    ) -> None:
+        self._action_history.append(
+            {
+                "action": action,
+                "browser_id": int(browser_id),
+                "ok": bool(ok),
+                "ref": str(ref or ""),
+                "url": str(url or ""),
+                "error": str(error or ""),
+                "validation": validation or {},
+                "at": time.time(),
+            }
+        )
+        if len(self._action_history) > 120:
+            del self._action_history[:-120]
+
+    def _recent_action_history(self, *, browser_id: int | None = None, limit: int = 24) -> list[dict[str, Any]]:
+        items = self._action_history
+        if browser_id is not None:
+            items = [item for item in items if item.get("browser_id") == int(browser_id)]
+        return items[-max(1, limit):]
+
+    def _remember_page_event(self, browser_id: int, kind: str, message: str, url: str = "") -> None:
+        text = str(message or "").strip()
+        if not text:
+            return
+        if kind == "console" and not text.lower().startswith(("error", "warning")):
+            return
+        events = self._page_events.setdefault(int(browser_id), [])
+        events.append(
+            {
+                "kind": str(kind or "event"),
+                "message": text[:1000],
+                "url": str(url or "")[:1000],
+                "at": time.time(),
+            }
+        )
+        if len(events) > 60:
+            del events[:-60]
+
+    def _recent_page_events(self, browser_id: int, limit: int = 20) -> list[dict[str, Any]]:
+        return self._page_events.get(int(browser_id), [])[-max(1, limit):]
+
+    @staticmethod
+    def _request_failure_message(request: Any) -> str:
+        failure = None
+        with contextlib.suppress(Exception):
+            failure = request.failure
+            if callable(failure):
+                failure = failure()
+        if isinstance(failure, dict):
+            return str(failure.get("errorText") or failure)
+        return str(failure or "request failed")
 
 _runtimes: dict[str, BrowserRuntime] = {}
 _runtime_lock = threading.RLock()

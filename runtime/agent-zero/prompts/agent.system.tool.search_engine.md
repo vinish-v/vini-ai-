@@ -8,6 +8,12 @@ in the visible Vini AI Computer Browser so users can see which sites are being
 used. Use the Browser tool after search when you need rendered-page inspection,
 screenshots, forms, login, or step-by-step browsing.
 
+Search also attempts a fast static extraction of the top source pages. Treat
+that extraction as a read-only acceleration lane: if it reports blocked,
+empty, malformed, or JavaScript-heavy content, switch to visible Browser work
+or a configured Firecrawl connector. Do not invent source content when
+extraction fails.
+
 query rules:
 - use keywords, names, exact phrases, model/version numbers, dates, and domains
 - do not write a natural-language question or sentence

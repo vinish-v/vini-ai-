@@ -6,9 +6,12 @@ from helpers.tool import Tool, Response
 from helpers.print_style import PrintStyle
 from helpers.errors import handle_error
 from helpers.searxng import search as searxng
+from plugins._browser.helpers.extraction import extract_page
 
 SEARCH_ENGINE_RESULTS = 10
 BROWSER_PREVIEW_RESULTS = 3
+FAST_EXTRACT_RESULTS = 2
+FAST_EXTRACT_TIMEOUT = 6
 
 
 class SearchEngine(Tool):
@@ -16,8 +19,9 @@ class SearchEngine(Tool):
 
 
         search_payload = await self.searxng_search(query)
-        searxng_result = self.format_result_searxng(search_payload, "Search Engine")
         preview_urls = self.extract_preview_urls(search_payload)
+        extracted = await self.extract_top_results(preview_urls[:FAST_EXTRACT_RESULTS])
+        searxng_result = self.format_result_searxng(search_payload, "Search Engine", extracted)
         if preview_urls:
             await self.open_urls_in_browser(preview_urls[:1])
             self.start_browser_preview(preview_urls[1:])
@@ -32,14 +36,34 @@ class SearchEngine(Tool):
     async def searxng_search(self, question):
         return await searxng(question)
 
-    def format_result_searxng(self, result, source):
+    def format_result_searxng(self, result, source, extracted=None):
         if isinstance(result, Exception):
             handle_error(result)
             return f"{source} search failed: {str(result)}"
 
         outputs = []
+        extracted_by_url = {
+            item.get("url"): item
+            for item in (extracted or [])
+            if isinstance(item, dict) and item.get("url")
+        }
         for item in (result or {}).get("results", []):
-            outputs.append(f"{item['title']}\n{item['url']}\n{item['content']}")
+            url = item["url"]
+            extra = extracted_by_url.get(url)
+            if extra and extra.get("ok"):
+                content = str(extra.get("content") or "")[:1400].strip()
+                fingerprint = str(extra.get("fingerprint") or "")[:12]
+                outputs.append(
+                    f"{item['title']}\n{url}\n{item['content']}\n\n"
+                    f"Fast extraction ({extra.get('extraction_mode')}, fingerprint {fingerprint}):\n{content}"
+                )
+            elif extra:
+                outputs.append(
+                    f"{item['title']}\n{url}\n{item['content']}\n\n"
+                    f"Fast extraction unavailable: {extra.get('status') or extra.get('error') or 'unknown'}"
+                )
+            else:
+                outputs.append(f"{item['title']}\n{url}\n{item['content']}")
 
         return "\n\n".join(outputs[:SEARCH_ENGINE_RESULTS]).strip()
 
@@ -72,6 +96,29 @@ class SearchEngine(Tool):
         except RuntimeError:
             return
         loop.create_task(self.open_urls_in_browser(urls))
+
+    async def extract_top_results(self, urls):
+        if not urls:
+            return []
+
+        async def run_extract(url):
+            try:
+                return await asyncio.to_thread(
+                    extract_page,
+                    url,
+                    timeout=FAST_EXTRACT_TIMEOUT,
+                    max_chars=6000,
+                )
+            except Exception as exc:
+                return {
+                    "ok": False,
+                    "status": "failed",
+                    "url": url,
+                    "error": str(exc),
+                    "extraction_mode": "static_html",
+                }
+
+        return await asyncio.gather(*(run_extract(url) for url in urls))
 
     async def open_urls_in_browser(self, urls):
         try:
