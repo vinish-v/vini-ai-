@@ -8,6 +8,16 @@
 </head>
 <body>
   <main class="vini-canvas-frame-shell" x-data>
+    <button
+      type="button"
+      class="vini-canvas-back-button"
+      title="Back to task chat"
+      aria-label="Back to task chat"
+      @click="$store.viniWorkspace.openAgent()"
+    >
+      <span class="material-symbols-outlined" aria-hidden="true">arrow_back</span>
+      <span>Task Chat</span>
+    </button>
     <iframe
       class="vini-canvas-dyad-frame"
       title="Vini Canvas"

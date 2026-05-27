@@ -76,8 +76,14 @@ def test_create_project_writes_real_vite_files_and_manifest(builder_module, monk
     assert manifest["framework"] == "vite-react-ts"
     assert manifest["status"] == "created"
     assert (project_dir / "package.json").is_file()
+    assert (project_dir / "server.mjs").is_file()
     assert (project_dir / "src" / "main.tsx").is_file()
-    assert "vite" in (project_dir / "package.json").read_text(encoding="utf-8")
+    package_json = json.loads((project_dir / "package.json").read_text(encoding="utf-8"))
+    assert "vite" in package_json["dependencies"]
+    assert "express" in package_json["dependencies"]
+    assert "framer-motion" in package_json["dependencies"]
+    assert "three" in package_json["dependencies"]
+    assert package_json["scripts"]["dev"] == "node server.mjs"
 
 
 def test_write_file_is_project_scoped_and_export_skips_runtime_artifacts(builder_module, monkeypatch, tmp_path):
@@ -95,6 +101,8 @@ def test_write_file_is_project_scoped_and_export_skips_runtime_artifacts(builder
     project_dir = tmp_path / "projects" / project_id
     (project_dir / "node_modules").mkdir()
     (project_dir / "node_modules" / "ignored.txt").write_text("ignored", encoding="utf-8")
+    (project_dir / ".vini-data").mkdir()
+    (project_dir / ".vini-data" / "reservations.json").write_text("[]", encoding="utf-8")
     export_result = builder.export_project(project_id)
     assert export_result["ok"] is True
 
@@ -104,4 +112,5 @@ def test_write_file_is_project_scoped_and_export_skips_runtime_artifacts(builder
     assert f"{project_id}/src/extra.ts" in names
     assert f"{project_id}/{builder.MANIFEST_NAME}" in names
     assert "node_modules/ignored.txt" not in names
+    assert f"{project_id}/.vini-data/reservations.json" not in names
     assert builder.LOG_NAME not in names

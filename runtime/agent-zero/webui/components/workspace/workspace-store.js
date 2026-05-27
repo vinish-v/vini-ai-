@@ -15,6 +15,7 @@ export const store = createStore("viniWorkspace", {
   openAgent() {
     this.active = "agent";
     document.body.classList.remove("vini-canvas-active");
+    this.resetWorkspaceDisplay();
     const sidebar = globalThis.Alpine?.store("sidebar");
     if (sidebar && this.previousSidebarOpen !== null) {
       sidebar.isOpen = this.previousSidebarOpen;
@@ -27,10 +28,20 @@ export const store = createStore("viniWorkspace", {
     document.body.classList.add("vini-canvas-active");
     document.body.classList.remove("right-canvas-open");
     globalThis.Alpine?.store("rightCanvas")?.close?.();
-    const sidebar = globalThis.Alpine?.store("sidebar");
-    if (sidebar) {
-      this.previousSidebarOpen = sidebar.isOpen;
-      sidebar.isOpen = false;
+    this.resetWorkspaceDisplay();
+  },
+
+  toggleCanvas() {
+    if (this.isCanvas()) {
+      this.openAgent();
+      return;
+    }
+    this.openCanvas();
+  },
+
+  resetWorkspaceDisplay() {
+    for (const id of ["vini-agent-workspace", "vini-agent-input-host", "vini-canvas-workspace-host"]) {
+      document.getElementById(id)?.style.removeProperty("display");
     }
   },
 });

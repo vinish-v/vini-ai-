@@ -9,6 +9,7 @@ def register_routes(app: Flask) -> None:
         return
 
     from plugins._vini_app_builder.helpers import builder
+    preview_methods = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
 
     @requires_auth
     async def preview_root(project_id: str):
@@ -30,13 +31,13 @@ def register_routes(app: Flask) -> None:
         "/vini-preview/<project_id>/",
         "vini_app_builder_preview_root",
         preview_root,
-        methods=["GET"],
+        methods=preview_methods,
     )
     app.add_url_rule(
         "/vini-preview/<project_id>/<path:subpath>",
         "vini_app_builder_preview_path",
         preview_path,
-        methods=["GET"],
+        methods=preview_methods,
     )
     app.add_url_rule(
         "/vini-builder/export/<project_id>",

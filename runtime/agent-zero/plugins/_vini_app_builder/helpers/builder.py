@@ -28,7 +28,7 @@ DEFAULT_PROJECTS_ROOT = "/a0/usr/canvas/projects"
 DEFAULT_EXPORTS_ROOT = "/a0/usr/canvas/exports"
 LEGACY_PROJECTS_ROOT = "/a0/usr/projects"
 PROJECT_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{1,62}$")
-SKIP_EXPORT_DIRS = {"node_modules", ".git", "dist", ".vite", "vini-qa", ".vini-qa-tools"}
+SKIP_EXPORT_DIRS = {"node_modules", ".git", "dist", ".vite", "vini-qa", ".vini-qa-tools", ".vini-data"}
 SKIP_EXPORT_FILES = {LOG_NAME}
 PREVIEW_PROCESSES: dict[str, subprocess.Popen[str]] = {}
 
@@ -338,13 +338,18 @@ def _starter_files(name: str, prompt: str, project_id: str) -> dict[str, str]:
                 "private": True,
                 "type": "module",
                 "scripts": {
-                    "dev": "vite",
+                    "dev": "node server.mjs",
                     "build": "tsc -b && vite build",
                     "typecheck": "tsc -b",
-                    "preview": "vite preview",
+                    "preview": "node server.mjs",
                 },
                 "dependencies": {
                     "@vitejs/plugin-react": "^5.1.1",
+                    "@react-three/fiber": "^9.6.1",
+                    "clsx": "^2.1.1",
+                    "express": "^5.2.1",
+                    "framer-motion": "^12.40.0",
+                    "three": "^0.184.0",
                     "vite": "^7.2.4",
                     "typescript": "^5.9.3",
                     "react": "^19.2.1",
@@ -352,8 +357,10 @@ def _starter_files(name: str, prompt: str, project_id: str) -> dict[str, str]:
                     "lucide-react": "^0.555.0",
                 },
                 "devDependencies": {
+                    "@types/express": "^5.0.6",
                     "@types/react": "^19.2.7",
                     "@types/react-dom": "^19.2.3",
+                    "@types/three": "^0.184.1",
                 },
             },
             indent=2,
@@ -385,6 +392,7 @@ def _starter_files(name: str, prompt: str, project_id: str) -> dict[str, str]:
     "forceConsistentCasingInFileNames": true,
     "module": "ESNext",
     "moduleResolution": "Node",
+    "types": ["vite/client"],
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true,
@@ -405,6 +413,166 @@ export default defineConfig({{
     hmr: false
   }}
 }});
+""",
+        "server.mjs": """import express from "express";
+import fs from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { createServer as createViteServer } from "vite";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const root = __dirname;
+const app = express();
+const isProduction = process.env.NODE_ENV === "production";
+const base = normalizeBase(process.env.VINI_PREVIEW_BASE || "/");
+const port = Number(process.env.PORT || readArg("--port") || 5173);
+const host = process.env.HOST || readArg("--host") || "127.0.0.1";
+const dataDir = path.join(root, ".vini-data");
+
+function readArg(name) {
+  const index = process.argv.indexOf(name);
+  return index >= 0 ? process.argv[index + 1] : "";
+}
+
+function normalizeBase(value) {
+  const text = String(value || "/").trim();
+  if (!text || text === "/") {
+    return "/";
+  }
+  return `/${text.replace(/^\\/+|\\/+$/g, "")}/`;
+}
+
+function route(pathname) {
+  const cleanPath = String(pathname || "/").replace(/^\\/+/, "");
+  return base === "/" ? `/${cleanPath}` : `${base}${cleanPath}`;
+}
+
+async function readJson(fileName, fallback) {
+  try {
+    const raw = await fs.readFile(path.join(dataDir, fileName), "utf8");
+    return JSON.parse(raw);
+  } catch {
+    return fallback;
+  }
+}
+
+async function writeJson(fileName, value) {
+  await fs.mkdir(dataDir, { recursive: true });
+  await fs.writeFile(path.join(dataDir, fileName), `${JSON.stringify(value, null, 2)}\\n`, "utf8");
+}
+
+async function appendRecord(fileName, record) {
+  const rows = await readJson(fileName, []);
+  rows.push({
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    createdAt: new Date().toISOString(),
+    ...record,
+  });
+  await writeJson(fileName, rows);
+  return rows.at(-1);
+}
+
+function validateFields(payload, fields) {
+  const missing = fields.filter((field) => String(payload?.[field] ?? "").trim().length === 0);
+  return missing;
+}
+
+app.disable("x-powered-by");
+app.use(express.json({ limit: "1mb" }));
+app.use(express.urlencoded({ extended: true }));
+
+app.get("/", (_request, response) => {
+  response.redirect(base);
+});
+
+app.get(route("/api/health"), async (_request, response) => {
+  let packageName = "vini-canvas-app";
+  try {
+    const packageJson = JSON.parse(await fs.readFile(path.join(root, "package.json"), "utf8"));
+    packageName = packageJson.name || packageName;
+  } catch {
+    // Health should remain available even if package metadata is temporarily invalid.
+  }
+  response.json({
+    ok: true,
+    app: packageName,
+    mode: isProduction ? "production" : "development",
+    base,
+    time: new Date().toISOString(),
+  });
+});
+
+app.get(route("/api/contact"), async (_request, response) => {
+  response.json({ ok: true, submissions: await readJson("contact-submissions.json", []) });
+});
+
+app.post(route("/api/contact"), async (request, response) => {
+  const payload = request.body || {};
+  const missing = validateFields(payload, ["name", "email", "message"]);
+  if (missing.length) {
+    response.status(400).json({ ok: false, error: `Missing required field(s): ${missing.join(", ")}` });
+    return;
+  }
+  const record = await appendRecord("contact-submissions.json", {
+    name: String(payload.name).trim(),
+    email: String(payload.email).trim(),
+    message: String(payload.message).trim(),
+    source: "local-vini-canvas-api",
+  });
+  response.status(201).json({ ok: true, submission: record });
+});
+
+app.get(route("/api/reservations"), async (_request, response) => {
+  response.json({ ok: true, reservations: await readJson("reservations.json", []) });
+});
+
+app.post(route("/api/reservations"), async (request, response) => {
+  const payload = request.body || {};
+  const missing = validateFields(payload, ["name", "email", "date", "partySize"]);
+  if (missing.length) {
+    response.status(400).json({ ok: false, error: `Missing required field(s): ${missing.join(", ")}` });
+    return;
+  }
+  const partySize = Number(payload.partySize);
+  if (!Number.isFinite(partySize) || partySize < 1) {
+    response.status(400).json({ ok: false, error: "partySize must be a positive number." });
+    return;
+  }
+  const record = await appendRecord("reservations.json", {
+    name: String(payload.name).trim(),
+    email: String(payload.email).trim(),
+    phone: String(payload.phone || "").trim(),
+    date: String(payload.date).trim(),
+    time: String(payload.time || "").trim(),
+    partySize,
+    notes: String(payload.notes || "").trim(),
+    source: "local-vini-canvas-api",
+  });
+  response.status(201).json({ ok: true, reservation: record });
+});
+
+if (!isProduction) {
+  const vite = await createViteServer({
+    root,
+    base,
+    server: {
+      middlewareMode: true,
+      hmr: false,
+    },
+    appType: "spa",
+  });
+  app.use(vite.middlewares);
+} else {
+  const distDir = path.join(root, "dist");
+  app.use(base, express.static(distDir));
+  app.use(base, (_request, response) => {
+    response.sendFile(path.join(distDir, "index.html"));
+  });
+}
+
+app.listen(port, host, () => {
+  console.log(`[vini-canvas-app] listening on http://${host}:${port}${base}`);
+});
 """,
         "src/main.tsx": """import React from "react";
 import { createRoot } from "react-dom/client";
@@ -754,6 +922,9 @@ def preview_project(project_id: str, start: bool = True, verify: bool = True) ->
         env = os.environ.copy()
         env["VINI_PREVIEW_BASE"] = f"/vini-preview/{project_id}/"
         env["VITE_VINI_BRIEF"] = str(manifest.get("brief") or "")
+        env["PORT"] = str(port)
+        env["HOST"] = "127.0.0.1"
+        env["VINI_CANVAS_PROJECT_ID"] = project_id
         log_handle = _log_path(project_id).open("a", encoding="utf-8")
         log_handle.write(f"\n[{_now()}] $ npm run dev -- --host 127.0.0.1 --port {port}\n")
         log_handle.flush()
@@ -828,7 +999,13 @@ def proxy_preview(project_id: str, subpath: str = "") -> Response:
     if query:
         target += f"?{query}"
     try:
-        upstream = urllib.request.Request(target, method=request.method)
+        body = request.get_data() if request.method.upper() not in {"GET", "HEAD"} else None
+        headers = {}
+        if request.content_type:
+            headers["content-type"] = request.content_type
+        if request.headers.get("accept"):
+            headers["accept"] = request.headers.get("accept")
+        upstream = urllib.request.Request(target, data=body, headers=headers, method=request.method)
         with urllib.request.urlopen(upstream, timeout=15) as response:
             data = response.read()
             content_type = response.headers.get("content-type")
