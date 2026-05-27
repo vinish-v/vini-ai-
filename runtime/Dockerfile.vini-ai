@@ -1,7 +1,11 @@
 FROM agent0ai/agent-zero:latest
 
 COPY agent-zero/ /a0/
+COPY agent-zero/plugins/_vini_canvas/ /a0/plugins/_vini_canvas/
+COPY agent-zero/plugins/_vini_canvas/ /opt/vini-bundled-plugins/_vini_canvas/
+RUN test -f /a0/plugins/_vini_canvas/api/backend.py && grep -q "_run_playwright_screenshot_qa" /a0/plugins/_vini_canvas/api/backend.py
 COPY entrypoint-overrides/run_ViniAI.sh /exe/run_A0.sh
+RUN sed -i 's/\r$//' /exe/run_A0.sh
 RUN /opt/venv-a0/bin/python -m pip install --no-cache-dir --no-deps supertonic==1.3.1
 RUN /opt/venv-a0/bin/python -m pip install --no-cache-dir webrtcvad-wheels==2.0.14
 RUN /opt/venv-a0/bin/python -m pip install --no-cache-dir onnx-asr==0.11.0

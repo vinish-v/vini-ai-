@@ -28,7 +28,7 @@ DEFAULT_PROJECTS_ROOT = "/a0/usr/canvas/projects"
 DEFAULT_EXPORTS_ROOT = "/a0/usr/canvas/exports"
 LEGACY_PROJECTS_ROOT = "/a0/usr/projects"
 PROJECT_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{1,62}$")
-SKIP_EXPORT_DIRS = {"node_modules", ".git", "dist", ".vite"}
+SKIP_EXPORT_DIRS = {"node_modules", ".git", "dist", ".vite", "vini-qa", ".vini-qa-tools"}
 SKIP_EXPORT_FILES = {LOG_NAME}
 PREVIEW_PROCESSES: dict[str, subprocess.Popen[str]] = {}
 
@@ -840,6 +840,24 @@ def proxy_preview(project_id: str, subpath: str = "") -> Response:
         return Response(exc.read(), status=exc.code)
     except Exception as exc:
         return Response(f"Vini preview unavailable: {exc}", status=502)
+
+
+def serve_qa_artifact(project_id: str, subpath: str) -> Response:
+    root = (_project_dir(project_id) / "vini-qa").resolve()
+    target = (root / subpath).resolve()
+    try:
+        target.relative_to(root)
+    except ValueError:
+        return Response("Invalid QA artifact path.", status=400)
+    if not target.is_file():
+        return Response("QA artifact not found.", status=404)
+    content_type = mimetypes.guess_type(str(target))[0] or "application/octet-stream"
+    return Response(
+        target.read_bytes(),
+        status=200,
+        content_type=content_type,
+        headers={"cache-control": "no-store"},
+    )
 
 
 def download_export(project_id: str) -> Response:
