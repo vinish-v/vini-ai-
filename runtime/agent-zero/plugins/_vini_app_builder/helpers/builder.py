@@ -7,6 +7,7 @@ import re
 import shutil
 import socket
 import subprocess
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -31,6 +32,8 @@ PROJECT_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{1,62}$")
 SKIP_EXPORT_DIRS = {"node_modules", ".git", "dist", ".vite", "vini-qa", ".vini-qa-tools", ".vini-data"}
 SKIP_EXPORT_FILES = {LOG_NAME}
 PREVIEW_PROCESSES: dict[str, subprocess.Popen[str]] = {}
+PROJECT_LOCKS: dict[str, threading.RLock] = {}
+PROJECT_LOCKS_GUARD = threading.Lock()
 
 
 @dataclass
@@ -162,6 +165,16 @@ def _manifest_path(project_id: str) -> Path:
 
 def _log_path(project_id: str) -> Path:
     return _project_dir(project_id) / LOG_NAME
+
+
+def _project_lock(project_id: str) -> threading.RLock:
+    normalized = _normalize_project_id(project_id)
+    with PROJECT_LOCKS_GUARD:
+        lock = PROJECT_LOCKS.get(normalized)
+        if lock is None:
+            lock = threading.RLock()
+            PROJECT_LOCKS[normalized] = lock
+        return lock
 
 
 def _load_manifest(project_id: str) -> dict[str, Any]:
@@ -871,29 +884,31 @@ def run_script(project_id: str, script: str) -> dict[str, Any]:
     }
     if script not in allowed:
         return {"ok": False, "error": f"Unsupported script: {script}. Supported: {', '.join(allowed)}"}
-    result = _run(project_id, allowed[script])
-    manifest = _load_manifest(project_id)
-    manifest["status"] = f"{script}_{'passed' if result.ok else 'failed'}"
-    manifest["last_command"] = _command_dict(result)
-    _save_manifest(project_id, manifest)
-    return {"ok": result.ok, "project": _public_project(manifest), "command": _command_dict(result)}
+    with _project_lock(project_id):
+        result = _run(project_id, allowed[script])
+        manifest = _load_manifest(project_id)
+        manifest["status"] = f"{script}_{'passed' if result.ok else 'failed'}"
+        manifest["last_command"] = _command_dict(result)
+        _save_manifest(project_id, manifest)
+        return {"ok": result.ok, "project": _public_project(manifest), "command": _command_dict(result)}
 
 
 def build_project(project_id: str, install: bool = True) -> dict[str, Any]:
-    commands = []
-    ok = True
-    if install:
-        install_result = run_script(project_id, "install")
-        commands.append(install_result.get("command"))
-        ok = bool(install_result.get("ok"))
-    if ok:
-        build_result = run_script(project_id, "build")
-        commands.append(build_result.get("command"))
-        ok = bool(build_result.get("ok"))
-    manifest = _load_manifest(project_id)
-    manifest["status"] = "build_passed" if ok else "build_failed"
-    _save_manifest(project_id, manifest)
-    return {"ok": ok, "project": _public_project(manifest), "commands": commands}
+    with _project_lock(project_id):
+        commands = []
+        ok = True
+        if install:
+            install_result = run_script(project_id, "install")
+            commands.append(install_result.get("command"))
+            ok = bool(install_result.get("ok"))
+        if ok:
+            build_result = run_script(project_id, "build")
+            commands.append(build_result.get("command"))
+            ok = bool(build_result.get("ok"))
+        manifest = _load_manifest(project_id)
+        manifest["status"] = "build_passed" if ok else "build_failed"
+        _save_manifest(project_id, manifest)
+        return {"ok": ok, "project": _public_project(manifest), "commands": commands}
 
 
 def _disable_vite_hmr_for_proxy(project_id: str) -> None:
@@ -913,56 +928,57 @@ def _disable_vite_hmr_for_proxy(project_id: str) -> None:
 
 
 def preview_project(project_id: str, start: bool = True, verify: bool = True) -> dict[str, Any]:
-    manifest = _load_manifest(project_id)
-    port = int(manifest.get("preview_port") or 0)
-    status = _process_status(project_id)
-    if not status.get("running") and start:
-        _disable_vite_hmr_for_proxy(project_id)
-        port = _find_free_port(project_id)
-        env = os.environ.copy()
-        env["VINI_PREVIEW_BASE"] = f"/vini-preview/{project_id}/"
-        env["VITE_VINI_BRIEF"] = str(manifest.get("brief") or "")
-        env["PORT"] = str(port)
-        env["HOST"] = "127.0.0.1"
-        env["VINI_CANVAS_PROJECT_ID"] = project_id
-        log_handle = _log_path(project_id).open("a", encoding="utf-8")
-        log_handle.write(f"\n[{_now()}] $ npm run dev -- --host 127.0.0.1 --port {port}\n")
-        log_handle.flush()
-        process = subprocess.Popen(
-            ["npm", "run", "dev", "--", "--host", "127.0.0.1", "--port", str(port)],
-            cwd=str(_project_dir(project_id)),
-            env=env,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            stdout=log_handle,
-            stderr=subprocess.STDOUT,
-            shell=False,
-        )
-        PREVIEW_PROCESSES[project_id] = process
-        time.sleep(0.5)
+    with _project_lock(project_id):
+        manifest = _load_manifest(project_id)
+        port = int(manifest.get("preview_port") or 0)
+        status = _process_status(project_id)
+        if not status.get("running") and start:
+            _disable_vite_hmr_for_proxy(project_id)
+            port = _find_free_port(project_id)
+            env = os.environ.copy()
+            env["VINI_PREVIEW_BASE"] = f"/vini-preview/{project_id}/"
+            env["VITE_VINI_BRIEF"] = str(manifest.get("brief") or "")
+            env["PORT"] = str(port)
+            env["HOST"] = "127.0.0.1"
+            env["VINI_CANVAS_PROJECT_ID"] = project_id
+            log_handle = _log_path(project_id).open("a", encoding="utf-8")
+            log_handle.write(f"\n[{_now()}] $ npm run dev -- --host 127.0.0.1 --port {port}\n")
+            log_handle.flush()
+            process = subprocess.Popen(
+                ["npm", "run", "dev", "--", "--host", "127.0.0.1", "--port", str(port)],
+                cwd=str(_project_dir(project_id)),
+                env=env,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                stdout=log_handle,
+                stderr=subprocess.STDOUT,
+                shell=False,
+            )
+            PREVIEW_PROCESSES[project_id] = process
+            time.sleep(0.5)
 
-    internal_url = f"http://127.0.0.1:{port}/"
-    public_url = f"/vini-preview/{project_id}/"
-    verification = _wait_for_http(internal_url, timeout_seconds=20) if verify else {"ok": None}
-    manifest.update(
-        {
-            "status": "preview_running" if verification.get("ok") else "preview_unverified",
-            "preview_port": port,
+        internal_url = f"http://127.0.0.1:{port}/"
+        public_url = f"/vini-preview/{project_id}/"
+        verification = _wait_for_http(internal_url, timeout_seconds=20) if verify else {"ok": None}
+        manifest.update(
+            {
+                "status": "preview_running" if verification.get("ok") else "preview_unverified",
+                "preview_port": port,
+                "preview_url": public_url,
+                "internal_preview_url": internal_url,
+                "last_verified_at": _now() if verification.get("ok") else manifest.get("last_verified_at"),
+                "preview_verification": verification,
+            }
+        )
+        _save_manifest(project_id, manifest)
+        return {
+            "ok": bool(verification.get("ok")),
+            "project": _public_project(manifest),
             "preview_url": public_url,
             "internal_preview_url": internal_url,
-            "last_verified_at": _now() if verification.get("ok") else manifest.get("last_verified_at"),
-            "preview_verification": verification,
+            "verification": verification,
         }
-    )
-    _save_manifest(project_id, manifest)
-    return {
-        "ok": bool(verification.get("ok")),
-        "project": _public_project(manifest),
-        "preview_url": public_url,
-        "internal_preview_url": internal_url,
-        "verification": verification,
-    }
 
 
 def export_project(project_id: str) -> dict[str, Any]:
