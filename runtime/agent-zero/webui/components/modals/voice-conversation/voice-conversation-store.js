@@ -8,8 +8,10 @@ const Status = {
   STARTING: "starting",
   LISTENING: "listening",
   RECORDING: "recording",
+  FINALIZING: "finalizing",
   THINKING: "thinking",
   SPEAKING: "speaking",
+  INTERRUPTED: "interrupted",
   ERROR: "error",
 };
 
@@ -84,6 +86,7 @@ const model = {
   stream: null,
   audioContext: null,
   mediaStreamSource: null,
+  workletNode: null,
   processorNode: null,
   resampleRemainder: new Float32Array(0),
   pcmRemainder: new Int16Array(0),
@@ -214,18 +217,33 @@ const model = {
     this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
     await this.audioContext.resume();
     this.mediaStreamSource = this.audioContext.createMediaStreamSource(stream);
+    if (this.audioContext.audioWorklet && typeof AudioWorkletNode !== "undefined") {
+      try {
+        await this.audioContext.audioWorklet.addModule(
+          "/components/modals/voice-conversation/voice-capture-worklet.js",
+        );
+        this.workletNode = new AudioWorkletNode(this.audioContext, "voice-capture-processor");
+        this.workletNode.port.onmessage = (event) => {
+          this.processAudioFrame(event?.data);
+        };
+        this.mediaStreamSource.connect(this.workletNode);
+        this.workletNode.connect(this.audioContext.destination);
+        return;
+      } catch (error) {
+        console.warn("[vini_voice] AudioWorklet unavailable, falling back to ScriptProcessor", error);
+      }
+    }
 
     this.processorNode = this.audioContext.createScriptProcessor(2048, 1, 1);
-    this.processorNode.onaudioprocess = (event) => this.processAudio(event);
-
+    this.processorNode.onaudioprocess = (event) => this.processAudioFrame(event.inputBuffer.getChannelData(0));
     this.mediaStreamSource.connect(this.processorNode);
     this.processorNode.connect(this.audioContext.destination);
   },
 
-  processAudio(event) {
+  processAudioFrame(inputFrame) {
     if (!this.isOpen || !this.isStreamingAudio || !voiceSocket.isConnected()) return;
-    const input = event.inputBuffer.getChannelData(0);
-    event.outputBuffer.getChannelData(0).fill(0);
+    const input = inputFrame instanceof Float32Array ? inputFrame : new Float32Array(inputFrame || []);
+    if (!input.length) return;
     const rms = this.calculateRms(input);
     this.audioLevel = Math.max(0, Math.min(1, rms * 8));
 
@@ -309,6 +327,8 @@ const model = {
       if (ttsService.isSpeaking()) ttsService.stop();
       if (this.activeVoiceResponseId) {
         this.interruptedVoiceResponseId = this.activeVoiceResponseId;
+        this.status = Status.INTERRUPTED;
+        this.vadLabel = "Interrupted, listening";
       }
       this.awaitingAgentResponse = false;
       clearTimeout(this.responseWaitTimer);
@@ -321,8 +341,8 @@ const model = {
     }
 
     if (event.type === "speech_end") {
-      this.status = Status.THINKING;
-      this.vadLabel = "Preparing reply";
+      this.status = Status.FINALIZING;
+      this.vadLabel = "Finalizing speech";
       return;
     }
 
@@ -593,6 +613,8 @@ const model = {
   },
 
   stopMedia() {
+    this.workletNode?.disconnect?.();
+    this.workletNode = null;
     this.processorNode?.disconnect?.();
     this.processorNode = null;
     this.mediaStreamSource?.disconnect?.();
@@ -690,8 +712,10 @@ const model = {
     if (this.error) return this.error;
     if (this.status === Status.STARTING) return "Starting real-time voice";
     if (this.status === Status.RECORDING) return "Listening to your voice";
+    if (this.status === Status.FINALIZING) return "Finalizing your speech";
     if (this.status === Status.THINKING) return "Vini AI is thinking";
     if (this.status === Status.SPEAKING) return "Vini AI is speaking";
+    if (this.status === Status.INTERRUPTED) return "Interrupted and listening again";
     if (this.status === Status.LISTENING) return "Listening. Start talking anytime.";
     return "Voice conversation ready";
   },

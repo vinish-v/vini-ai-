@@ -3,6 +3,7 @@ from helpers import runtime
 from helpers.print_style import PrintStyle
 import models
 from plugins._kokoro_tts.helpers import runtime as kokoro_tts_runtime
+from plugins._vini_voice.helpers import runtime as vini_voice_runtime
 from plugins._whisper_stt.helpers import runtime as whisper_stt_runtime
 
 
@@ -13,7 +14,10 @@ async def preload():
             if not whisper_stt_runtime.is_globally_enabled():
                 return None
             try:
-                config = whisper_stt_runtime.get_config()
+                if vini_voice_runtime.is_globally_enabled():
+                    config = vini_voice_runtime.get_voice_stt_config()
+                else:
+                    config = whisper_stt_runtime.get_config()
                 return await whisper_stt_runtime.preload(
                     str(config["model_size"]),
                     engine=str(config["engine"]),
