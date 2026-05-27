@@ -196,6 +196,11 @@
               @mousemove.throttle.250ms="$store.browserPage.sendMouse('move', $event)" draggable="false" />
           </template>
 	          <div class="browser-live-action-layer" aria-hidden="true">
+	            <template x-for="segment in $store.browserPage.actionPathSegments()" :key="'trail-' + segment.id">
+	              <span class="browser-live-action-trail"
+	                :class="'action-' + String(segment.action || '').replaceAll('_', '-')"
+	                :style="segment.style"></span>
+	            </template>
 	            <template x-for="action in $store.browserPage.liveActions" :key="action.id">
 	              <div class="browser-live-action"
 	                :class="$store.browserPage.actionOverlayClass(action)"
@@ -205,18 +210,22 @@
 	              </div>
 	            </template>
 	          </div>
-	          <div class="browser-live-hud" aria-live="polite">
+	          <div class="browser-live-hud" :class="$store.browserPage.streamQualityClass()" aria-live="polite">
 	            <span class="browser-live-dot"></span>
 	            <span x-text="$store.browserPage.streamStatusText()"></span>
 	            <span class="browser-live-current" x-show="$store.browserPage.activeActionLabel()"
 	              x-text="$store.browserPage.activeActionLabel()"></span>
+	            <span class="browser-live-cleanup" x-text="$store.browserPage.frameCleanupText()"></span>
 	          </div>
 	          <div class="browser-action-feed" x-show="$store.browserPage.actionFeed.length" x-transition
 	            style="display: none;">
 	            <template x-for="action in $store.browserPage.actionFeed" :key="'feed-' + action.id">
 	              <div class="browser-action-feed-row">
 	                <span class="browser-action-feed-dot"></span>
-	                <span x-text="action.label"></span>
+	                <span class="browser-action-feed-copy">
+	                  <span x-text="action.label"></span>
+	                  <small x-text="$store.browserPage.actionFeedMeta(action)"></small>
+	                </span>
 	              </div>
 	            </template>
 	          </div>
@@ -1107,6 +1116,26 @@
         animation: browser-live-action-fade 1.8s ease-out both;
       }
 
+      .browser-live-action-trail {
+        position: absolute;
+        display: block;
+        height: 2px;
+        min-width: 8px;
+        border-radius: 999px;
+        transform-origin: 0 50%;
+        background: linear-gradient(90deg, rgba(96, 165, 250, 0.05), rgba(96, 165, 250, 0.74));
+        box-shadow: 0 0 12px rgba(96, 165, 250, 0.22);
+        opacity: 0;
+        animation: browser-live-trail-fade 4.2s ease-out both;
+      }
+
+      .browser-live-action-trail.action-type,
+      .browser-live-action-trail.action-type-submit,
+      .browser-live-action-trail.action-keyboard {
+        background: linear-gradient(90deg, rgba(246, 196, 79, 0.04), rgba(246, 196, 79, 0.76));
+        box-shadow: 0 0 12px rgba(246, 196, 79, 0.2);
+      }
+
       .browser-live-action.has-point {
         transform: translate3d(-6px, -6px, 0);
       }
@@ -1177,12 +1206,32 @@
         animation: browser-live-dot-pulse 1.1s ease-out infinite;
       }
 
+      .browser-live-hud.is-low-fps .browser-live-dot {
+        background: #f6c44f;
+        box-shadow: 0 0 0 0 rgba(246, 196, 79, 0.5);
+      }
+
+      .browser-live-hud.is-stale .browser-live-dot,
+      .browser-live-hud.is-empty .browser-live-dot {
+        background: #f87171;
+        box-shadow: 0 0 0 0 rgba(248, 113, 113, 0.5);
+      }
+
       .browser-live-current {
         min-width: 0;
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
         color: rgba(255, 255, 255, 0.76);
+      }
+
+      .browser-live-cleanup {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        color: rgba(255, 255, 255, 0.55);
+        font-weight: 620;
       }
 
       .browser-action-feed {
@@ -1212,11 +1261,24 @@
         box-shadow: 0 10px 24px rgba(0, 0, 0, 0.24);
       }
 
-      .browser-action-feed-row span:last-child {
+      .browser-action-feed-copy {
+        display: grid;
+        min-width: 0;
+        gap: 1px;
+      }
+
+      .browser-action-feed-copy span,
+      .browser-action-feed-copy small {
         min-width: 0;
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
+      }
+
+      .browser-action-feed-copy small {
+        color: rgba(255, 255, 255, 0.52);
+        font-size: 0.64rem;
+        font-weight: 560;
       }
 
       @keyframes browser-live-cursor-pulse {
@@ -1242,6 +1304,21 @@
         }
         78% {
           opacity: 1;
+        }
+        100% {
+          opacity: 0;
+        }
+      }
+
+      @keyframes browser-live-trail-fade {
+        0% {
+          opacity: 0;
+        }
+        10% {
+          opacity: 0.72;
+        }
+        70% {
+          opacity: 0.42;
         }
         100% {
           opacity: 0;
