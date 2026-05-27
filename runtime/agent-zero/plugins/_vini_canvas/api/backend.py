@@ -977,13 +977,53 @@ async def _generate_app_turn(state: dict[str, Any], data: dict[str, Any]) -> dic
         },
     )
 
-    generated_files, cfg, summary = await _generate_files_with_vini_model(
-        app=app,
-        chat=chat,
-        prompt=prompt,
-        design_context=design_context,
-        design_brief=design_brief,
-    )
+    try:
+        generated_files, cfg, summary = await _generate_files_with_vini_model(
+            app=app,
+            chat=chat,
+            prompt=prompt,
+            design_context=design_context,
+            design_brief=design_brief,
+        )
+    except Exception as exc:
+        error_message = str(exc).strip() or exc.__class__.__name__
+        _save_project_metadata(
+            str(app["project_id"]),
+            {
+                "quality_gate_status": "provider_failed",
+                "last_provider_error": error_message[:2000],
+            },
+        )
+        assistant_message = _append_message(
+            state,
+            chat,
+            "assistant",
+            "\n\n".join(
+                [
+                    "<dyad-status>Generation blocked by the active Vini AI provider.</dyad-status>",
+                    "Vini Canvas selected the design context and prepared the project, but it could not write the real app files because the configured provider returned an error.",
+                    f"Provider error: {error_message}",
+                    "No fake files were generated. Update the provider/key/quota in Vini AI settings, then retry this Canvas message.",
+                ]
+            ),
+        )
+        assistant_message["model"] = "provider-error"
+        chat["title"] = chat.get("title") if chat.get("title") and chat.get("title") != "New Chat" else prompt[:60]
+        app["updatedAt"] = _now()
+        _save_state(state)
+        return {
+            "ok": True,
+            "chat": _chat_response(chat),
+            "updatedFiles": False,
+            "files": [],
+            "build": None,
+            "preview": None,
+            "designContext": design_context,
+            "designBrief": design_brief,
+            "visualQa": None,
+            "warningMessages": ["Generation blocked by the active Vini AI provider: " + error_message],
+        }
+
     for file_info in generated_files:
         write_result = builder.handle_action(
             {
@@ -999,6 +1039,7 @@ async def _generate_app_turn(state: dict[str, Any], data: dict[str, Any]) -> dic
     build_result = builder.handle_action({"action": "build_all", "project_id": app["project_id"], "install": True})
     preview_result = None
     if build_result.get("ok"):
+        _stop_preview(str(app["project_id"]))
         preview_result = builder.handle_action({"action": "preview", "project_id": app["project_id"], "verify": True})
     visual_qa = _run_visual_qa(
         app=app,

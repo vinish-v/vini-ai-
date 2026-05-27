@@ -54,6 +54,7 @@
   let statePromise = null;
   let savedSettings = null;
   const listeners = new Map();
+  const activeChatGenerations = new Map();
 
   async function getCsrfToken() {
     if (csrfToken) return csrfToken;
@@ -119,6 +120,72 @@
       } catch (error) {
         console.error(`Vini Canvas listener failed for ${channel}`, error);
       }
+    }
+  }
+
+  async function runChatGeneration(params) {
+    const chatId = Number(params?.chatId);
+    if (!chatId) {
+      throw new Error("chatId is required for Vini Canvas generation.");
+    }
+    if (activeChatGenerations.has(chatId)) {
+      return activeChatGenerations.get(chatId);
+    }
+
+    const generation = (async () => {
+      const appIdForProgress = Number(params.appId || params.app?.id || 0) || undefined;
+      emit("chat:stream:start", { chatId });
+      for (const message of [
+        "Planning design",
+        "Selecting skills",
+        "Selecting design system",
+        "Writing files",
+        "Installing dependencies",
+        "Building",
+        "Starting preview",
+        "Running visual QA",
+      ]) {
+        emit("app:output", {
+          type: "info",
+          message,
+          appId: appIdForProgress,
+          timestamp: Date.now(),
+        });
+      }
+      const result = await canvasBackend("generate_app", params);
+      emit("chat:response:chunk", {
+        chatId,
+        messages: result.chat?.messages || [],
+        effectiveChatMode: params.requestedChatMode || "build",
+      });
+      const previewUrl = result.preview?.preview_url;
+      const originalUrl = result.preview?.internal_preview_url || previewUrl;
+      const appId = result.chat?.appId;
+      if (previewUrl && appId) {
+        emit("app:output", {
+          type: "stdout",
+          message: `[dyad-proxy-server]started=[${previewUrl}] original=[${originalUrl}] mode=[host]`,
+          appId,
+          timestamp: Date.now(),
+        });
+      }
+      emit("chat:response:end", {
+        chatId,
+        updatedFiles: Boolean(result.updatedFiles),
+        extraFiles: result.files || [],
+        warningMessages: result.warningMessages || [],
+        totalTokens: result.chat?.messages?.at?.(-1)?.totalTokens || undefined,
+        chatSummary: result.chat?.title || undefined,
+      });
+      emit("chat:stream:end", { chatId });
+      return result;
+    })();
+
+    activeChatGenerations.set(chatId, generation);
+    try {
+      return await generation;
+    } finally {
+      activeChatGenerations.delete(chatId);
     }
   }
 
@@ -379,6 +446,27 @@
       }
       case "create-app": {
         const result = await canvasBackend("create_app", input || {});
+        const prompt = String(input?.prompt || "").trim();
+        if (prompt && result?.chatId) {
+          queueMicrotask(() => {
+            runChatGeneration({
+              chatId: result.chatId,
+              appId: result.app?.id,
+              app: result.app,
+              prompt,
+              requestedChatMode: input?.initialChatMode || "build",
+            }).catch((error) => {
+              const appId = result.app?.id;
+              emit("app:output", {
+                type: "stderr",
+                message: error?.message || String(error),
+                appId,
+                timestamp: Date.now(),
+              });
+              emit("chat:stream:end", { chatId: result.chatId });
+            });
+          });
+        }
         return { app: result.app, chatId: result.chatId };
       }
       case "get-app": {
@@ -483,52 +571,7 @@
         return false;
       case "chat:stream": {
         const params = input || {};
-        const chatId = Number(params.chatId);
-        const appIdForProgress = Number(params.appId || params.app?.id || 0) || undefined;
-        emit("chat:stream:start", { chatId });
-        for (const message of [
-          "Planning design",
-          "Selecting skills",
-          "Selecting design system",
-          "Writing files",
-          "Installing dependencies",
-          "Building",
-          "Starting preview",
-          "Running visual QA",
-        ]) {
-          emit("app:output", {
-            type: "info",
-            message,
-            appId: appIdForProgress,
-            timestamp: Date.now(),
-          });
-        }
-        const result = await canvasBackend("generate_app", params);
-        emit("chat:response:chunk", {
-          chatId,
-          messages: result.chat?.messages || [],
-          effectiveChatMode: params.requestedChatMode || "build",
-        });
-        const previewUrl = result.preview?.preview_url;
-        const originalUrl = result.preview?.internal_preview_url || previewUrl;
-        const appId = result.chat?.appId;
-        if (previewUrl && appId) {
-          emit("app:output", {
-            type: "stdout",
-            message: `[dyad-proxy-server]started=[${previewUrl}] original=[${originalUrl}] mode=[host]`,
-            appId,
-            timestamp: Date.now(),
-          });
-        }
-        emit("chat:response:end", {
-          chatId,
-          updatedFiles: Boolean(result.updatedFiles),
-          extraFiles: result.files || [],
-          warningMessages: result.warningMessages || [],
-          totalTokens: result.chat?.messages?.at?.(-1)?.totalTokens || undefined,
-          chatSummary: result.chat?.title || undefined,
-        });
-        emit("chat:stream:end", { chatId });
+        await runChatGeneration(params);
         return undefined;
       }
       case "run-app": {
