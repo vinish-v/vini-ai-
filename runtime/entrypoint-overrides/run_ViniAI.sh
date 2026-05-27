@@ -4,4 +4,4 @@
 . "/ins/copy_A0.sh" "$@"
 
 echo "Starting Vini AI bootstrap manager..."
-exec python /exe/self_update_manager.py docker-run-ui
+exec /opt/venv-a0/bin/python /exe/self_update_manager.py docker-run-ui

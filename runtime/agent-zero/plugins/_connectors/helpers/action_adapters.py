@@ -21,7 +21,7 @@ SPECIALIZED_ACTIONS: dict[str, set[str]] = {
     "linear": {"search", "read", "create", "update", "delete"},
     "todoist": {"search", "read", "create", "update", "delete"},
     "resend": {"read", "send"},
-    "firecrawl": {"search", "read"},
+    "firecrawl": {"batch_scrape", "crawl", "interact", "map", "read", "scrape", "search"},
     "apify": {"search", "read", "create"},
     "telegram": {"send"},
     "email": {"send"},
@@ -262,15 +262,253 @@ def _resend(action: str, payload: dict[str, Any], env: dict[str, str]) -> dict[s
 
 def _firecrawl(action: str, payload: dict[str, Any], env: dict[str, str]) -> dict[str, Any]:
     headers = _bearer_headers(_require_key(env, "FIRECRAWL_API_KEY"))
-    base = "https://api.firecrawl.dev/v1"
-    if action == "read":
-        body = {"url": _required(payload, "url")}
-        if payload.get("formats"):
-            body["formats"] = payload["formats"]
-        return _result("firecrawl", action, _http_json("POST", f"{base}/scrape", headers, json_body=body))
-    if action == "search":
-        return _result("firecrawl", action, _http_json("POST", f"{base}/search", headers, json_body={"query": _required(payload, "query"), "limit": _limit(payload)}))
+    base = _firecrawl_base_url(env, payload)
+    operation = str(payload.get("operation") or payload.get("resource") or action or "").strip().lower().replace("-", "_")
+    if action == "read" and operation == "read":
+        operation = "scrape" if payload.get("url") else "search"
+
+    if operation in {"read", "scrape"}:
+        body = _firecrawl_payload(
+            payload,
+            required=("url",),
+            allowed={
+                "url",
+                "formats",
+                "onlyMainContent",
+                "includeTags",
+                "excludeTags",
+                "headers",
+                "waitFor",
+                "mobile",
+                "skipTlsVerification",
+                "timeout",
+                "location",
+                "actions",
+                "removeBase64Images",
+                "blockAds",
+                "proxy",
+            },
+            defaults={"formats": payload.get("formats") or ["markdown"]},
+        )
+        return _firecrawl_result(
+            action,
+            operation,
+            base,
+            _http_json("POST", f"{base}/scrape", headers, json_body=body, timeout=_http_timeout(payload)),
+        )
+    if operation == "interact":
+        body = _firecrawl_payload(
+            payload,
+            required=("url", "actions"),
+            allowed={
+                "url",
+                "actions",
+                "formats",
+                "headers",
+                "waitFor",
+                "mobile",
+                "timeout",
+                "location",
+                "removeBase64Images",
+                "blockAds",
+                "proxy",
+            },
+            defaults={"formats": payload.get("formats") or ["markdown"]},
+        )
+        return _firecrawl_result(
+            action,
+            operation,
+            base,
+            _http_json("POST", f"{base}/scrape", headers, json_body=body, timeout=_http_timeout(payload)),
+        )
+    if operation == "search":
+        body = _firecrawl_payload(
+            payload,
+            required=("query",),
+            allowed={
+                "query",
+                "limit",
+                "sources",
+                "categories",
+                "tbs",
+                "location",
+                "timeout",
+                "ignoreInvalidURLs",
+                "scrapeOptions",
+            },
+            defaults={"limit": _limit(payload)},
+        )
+        return _firecrawl_result(
+            action,
+            operation,
+            base,
+            _http_json("POST", f"{base}/search", headers, json_body=body, timeout=_http_timeout(payload)),
+        )
+    if operation == "map":
+        body = _firecrawl_payload(
+            payload,
+            required=("url",),
+            allowed={
+                "url",
+                "search",
+                "sitemap",
+                "includeSubdomains",
+                "ignoreQueryParameters",
+                "limit",
+                "timeout",
+            },
+            defaults={"limit": _limit(payload)},
+        )
+        return _firecrawl_result(
+            action,
+            operation,
+            base,
+            _http_json("POST", f"{base}/map", headers, json_body=body, timeout=_http_timeout(payload)),
+        )
+    if operation == "crawl":
+        job_id = str(payload.get("job_id") or payload.get("id") or "").strip()
+        if job_id:
+            return _firecrawl_result(
+                action,
+                operation,
+                base,
+                _http_json("GET", f"{base}/crawl/{urllib.parse.quote(job_id)}", headers, timeout=_http_timeout(payload)),
+            )
+        body = _firecrawl_payload(
+            payload,
+            required=("url",),
+            allowed={
+                "url",
+                "excludePaths",
+                "includePaths",
+                "maxDepth",
+                "ignoreSitemap",
+                "limit",
+                "allowBackwardLinks",
+                "allowExternalLinks",
+                "delay",
+                "webhook",
+                "scrapeOptions",
+            },
+            defaults={"limit": _limit(payload)},
+        )
+        return _firecrawl_result(
+            action,
+            operation,
+            base,
+            _http_json("POST", f"{base}/crawl", headers, json_body=body, timeout=_http_timeout(payload)),
+        )
+    if operation in {"batch_scrape", "batch"}:
+        job_id = str(payload.get("job_id") or payload.get("id") or "").strip()
+        if job_id:
+            return _firecrawl_result(
+                action,
+                "batch_scrape",
+                base,
+                _http_json("GET", f"{base}/batch/scrape/{urllib.parse.quote(job_id)}", headers, timeout=_http_timeout(payload)),
+            )
+        urls = payload.get("urls")
+        if not isinstance(urls, list) or not urls:
+            raise ValueError("Firecrawl batch_scrape requires urls.")
+        body = _firecrawl_payload(
+            payload,
+            required=("urls",),
+            allowed={
+                "urls",
+                "formats",
+                "onlyMainContent",
+                "includeTags",
+                "excludeTags",
+                "headers",
+                "waitFor",
+                "mobile",
+                "skipTlsVerification",
+                "timeout",
+                "location",
+                "removeBase64Images",
+                "blockAds",
+                "proxy",
+            },
+            defaults={"formats": payload.get("formats") or ["markdown"]},
+        )
+        return _firecrawl_result(
+            action,
+            "batch_scrape",
+            base,
+            _http_json("POST", f"{base}/batch/scrape", headers, json_body=body, timeout=_http_timeout(payload)),
+        )
     return None
+
+
+def _firecrawl_base_url(env: dict[str, str], payload: dict[str, Any]) -> str:
+    value = str(
+        payload.get("base_url")
+        or payload.get("api_url")
+        or env.get("FIRECRAWL_API_URL")
+        or env.get("FIRECRAWL_BASE_URL")
+        or "https://api.firecrawl.dev/v2"
+    ).strip().rstrip("/")
+    if not value:
+        value = "https://api.firecrawl.dev/v2"
+    if value.endswith("/v1"):
+        value = value[:-3] + "/v2"
+    if not value.endswith("/v2"):
+        value = f"{value}/v2"
+    return value
+
+
+def _firecrawl_payload(
+    payload: dict[str, Any],
+    *,
+    required: tuple[str, ...],
+    allowed: set[str],
+    defaults: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    body: dict[str, Any] = {}
+    defaults = defaults or {}
+    for key, value in defaults.items():
+        if value not in (None, "", []):
+            body[key] = value
+    for key in allowed:
+        if key in payload and payload[key] not in (None, ""):
+            body[key] = payload[key]
+    for key in required:
+        if key not in body or body[key] in (None, "", []):
+            if key == "urls":
+                raise ValueError("Missing required field: urls")
+            body[key] = _required(payload, key)
+    return body
+
+
+def _firecrawl_result(action: str, operation: str, base: str, data: dict[str, Any]) -> dict[str, Any]:
+    result = _result("firecrawl", action, data)
+    result["operation"] = operation
+    result["api_base"] = base
+    if not result.get("ok"):
+        status = int(result.get("http_status") or 0)
+        if status in {401, 403}:
+            result["provider_state"] = "auth_failed_or_forbidden"
+        elif status == 402:
+            result["provider_state"] = "quota_exhausted"
+        elif status == 429:
+            result["provider_state"] = "rate_limited"
+        elif status == 404:
+            result["provider_state"] = "endpoint_not_found"
+        elif status >= 500:
+            result["provider_state"] = "provider_unavailable"
+        elif status == 0:
+            result["provider_state"] = "network_unavailable"
+        else:
+            result["provider_state"] = "request_failed"
+    return result
+
+
+def _http_timeout(payload: dict[str, Any], default: int = 60) -> int:
+    try:
+        value = int(payload.get("request_timeout") or payload.get("http_timeout") or default)
+    except Exception:
+        value = default
+    return max(5, min(value, 300))
 
 
 def _apify(action: str, payload: dict[str, Any], env: dict[str, str]) -> dict[str, Any]:
