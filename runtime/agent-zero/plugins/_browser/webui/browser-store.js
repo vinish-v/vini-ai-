@@ -26,6 +26,11 @@ const CANVAS_VIEWPORT_SETTLE_MS = 520;
 const SURFACE_VIEWPORT_STABLE_FRAMES = 4;
 const SURFACE_VIEWPORT_MAX_WAIT_MS = 1200;
 const FRAME_REJECT_SYNC_COOLDOWN_MS = 600;
+const STREAM_TARGET_FPS = 12;
+const STREAM_STALE_MS = 2200;
+const ACTION_OVERLAY_TTL_MS = 2600;
+const ACTION_PATH_TTL_MS = 4200;
+const ACTION_FEED_LIMIT = 18;
 const ANNOTATION_DRAG_THRESHOLD = 6;
 const ANNOTATION_MAX_COMMENTS = 24;
 const ANNOTATION_DOM_LIMIT = 1200;
@@ -140,9 +145,11 @@ const model = {
   frameSrc: "",
   frameState: null,
   liveActions: [],
+  liveActionPath: [],
   actionFeed: [],
   streamFrameTimes: [],
   streamFps: 0,
+  frameCleanupStats: { created: 0, revoked: 0 },
   annotating: false,
   annotationComments: [],
   annotationDraft: null,
@@ -1116,13 +1123,23 @@ const model = {
       action: String(data.action || "action"),
       label: String(data.label || data.action || "Agent action"),
       point: this.normalizeActionPoint(data.point),
+      url: String(data.url || ""),
+      title: String(data.title || ""),
+      source: String(data.source || "agent"),
+      at: Number(data.at || 0) || Date.now() / 1000,
       createdAt: Date.now(),
     };
-    this.liveActions = [...this.liveActions.slice(-5), action];
-    this.actionFeed = [action, ...this.actionFeed].slice(0, 12);
+    this.liveActions = [...this.liveActions.slice(-7), action];
+    this.actionFeed = [action, ...this.actionFeed].slice(0, ACTION_FEED_LIMIT);
+    if (action.point) {
+      this.liveActionPath = [...this.liveActionPath.slice(-15), action];
+    }
     globalThis.setTimeout?.(() => {
       this.liveActions = this.liveActions.filter((item) => item.id !== action.id);
-    }, 1800);
+    }, ACTION_OVERLAY_TTL_MS);
+    globalThis.setTimeout?.(() => {
+      this.liveActionPath = this.liveActionPath.filter((item) => item.id !== action.id);
+    }, ACTION_PATH_TTL_MS);
   },
 
   normalizeActionPoint(point = null) {
@@ -1155,6 +1172,45 @@ const model = {
     };
   },
 
+  actionPathSegments() {
+    const dimensions = this._lastFrameDimensions;
+    if (!dimensions?.width || !dimensions?.height) return [];
+    const points = this.liveActionPath
+      .filter((action) => action?.point)
+      .map((action) => ({
+        id: action.id,
+        action: action.action,
+        x: Math.max(0, Math.min(100, (action.point.x / Math.max(1, dimensions.width)) * 100)),
+        y: Math.max(0, Math.min(100, (action.point.y / Math.max(1, dimensions.height)) * 100)),
+      }));
+    return points.slice(1).map((point, index) => {
+      const previous = points[index];
+      const dx = point.x - previous.x;
+      const dy = point.y - previous.y;
+      const length = Math.sqrt((dx * dx) + (dy * dy));
+      const angle = Math.atan2(dy, dx) * (180 / Math.PI);
+      return {
+        id: `${previous.id}-${point.id}`,
+        action: point.action,
+        style: {
+          left: `${previous.x}%`,
+          top: `${previous.y}%`,
+          width: `${length}%`,
+          transform: `rotate(${angle}deg)`,
+        },
+      };
+    });
+  },
+
+  actionFeedMeta(action = {}) {
+    const ageSeconds = Math.max(0, Math.round((Date.now() - Number(action.createdAt || Date.now())) / 1000));
+    const parts = [];
+    if (action.title) parts.push(action.title);
+    else if (action.url) parts.push(action.url);
+    parts.push(ageSeconds <= 1 ? "now" : `${ageSeconds}s ago`);
+    return parts.join(" · ");
+  },
+
   recordStreamFrame() {
     const now = Date.now();
     const cutoff = now - 2000;
@@ -1168,7 +1224,28 @@ const model = {
   streamStatusText() {
     if (!this.frameSrc) return this.loading ? "Connecting" : "No live frame";
     const fps = Number(this.streamFps || 0);
-    return fps > 0 ? `Live ${fps} fps` : "Live";
+    const staleMs = this.streamStaleMs();
+    const status = staleMs > STREAM_STALE_MS ? "stale" : fps >= STREAM_TARGET_FPS ? "smooth" : "low fps";
+    return fps > 0 ? `Live ${fps} fps · ${status}` : "Live";
+  },
+
+  streamStaleMs() {
+    if (!this._lastFrameAt) return 0;
+    return Math.max(0, Date.now() - this._lastFrameAt);
+  },
+
+  streamQualityClass() {
+    if (!this.frameSrc) return "is-empty";
+    if (this.streamStaleMs() > STREAM_STALE_MS) return "is-stale";
+    if (Number(this.streamFps || 0) >= STREAM_TARGET_FPS) return "is-smooth";
+    return "is-low-fps";
+  },
+
+  frameCleanupText() {
+    const created = Number(this.frameCleanupStats?.created || 0);
+    const revoked = Number(this.frameCleanupStats?.revoked || 0);
+    const live = Math.max(0, this._ownedFrameUrls.length);
+    return `frames ${created} created / ${revoked} revoked / ${live} live`;
   },
 
   activeActionLabel() {
@@ -1180,6 +1257,10 @@ const model = {
       const url = base64ImageToObjectUrl(image, mime);
       if (url) {
         this._ownedFrameUrls = [...this._ownedFrameUrls, url];
+        this.frameCleanupStats = {
+          ...this.frameCleanupStats,
+          created: Number(this.frameCleanupStats?.created || 0) + 1,
+        };
       }
       return url;
     } catch (error) {
@@ -1192,6 +1273,10 @@ const model = {
     if (!url || !String(url).startsWith("blob:")) return;
     try {
       URL.revokeObjectURL(url);
+      this.frameCleanupStats = {
+        ...this.frameCleanupStats,
+        revoked: Number(this.frameCleanupStats?.revoked || 0) + 1,
+      };
     } catch {}
     this._ownedFrameUrls = this._ownedFrameUrls.filter((item) => item !== url);
   },
@@ -1201,6 +1286,10 @@ const model = {
       if (!url || !String(url).startsWith("blob:")) continue;
       try {
         URL.revokeObjectURL(url);
+        this.frameCleanupStats = {
+          ...this.frameCleanupStats,
+          revoked: Number(this.frameCleanupStats?.revoked || 0) + 1,
+        };
       } catch {}
     }
     this._ownedFrameUrls = [];
@@ -2703,6 +2792,7 @@ const model = {
     this._stateOff = null;
     this._actionOff = null;
     this.liveActions = [];
+    this.liveActionPath = [];
     this.actionFeed = [];
     this.streamFrameTimes = [];
     this.streamFps = 0;
