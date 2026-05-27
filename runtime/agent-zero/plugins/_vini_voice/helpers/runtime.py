@@ -32,7 +32,7 @@ DEFAULT_CONFIG = {
 }
 
 DEFAULT_VOICE_STT_CONFIG = {
-    "engine": "whisper",
+    "engine": "moonshine",
     "model_size": "tiny",
     "language": "en",
     "message_mode": "send",
@@ -121,7 +121,7 @@ def get_voice_stt_config() -> dict[str, Any]:
     model_size = str(voice_stt.get("model_size") or "tiny").strip()
     engine = str(voice_stt.get("engine") or "whisper").strip().lower()
 
-    voice_stt["engine"] = engine if engine in {"whisper", "parakeet"} else "whisper"
+    voice_stt["engine"] = engine if engine in {"whisper", "parakeet", "moonshine"} else "moonshine"
     voice_stt["model_size"] = model_size if model_size in {"tiny", "base", "small", "medium", "large", "turbo"} else "tiny"
     voice_stt["language"] = language or "en"
     return voice_stt
