@@ -30,17 +30,18 @@ PLUGIN_NAME = "_whisper_stt"
 PARAKEET_MODEL_DIR = "usr/models/parakeet-tdt-0.6b-v3-int8"
 PARAKEET_MODEL_NAME = "nemo-parakeet-tdt-0.6b-v3"
 DEFAULT_CONFIG = {
-    "engine": "parakeet",
-    "model_size": "base",
+    "engine": "whisper",
+    "model_size": "tiny",
     "language": "en",
     "message_mode": "send",
     "silence_threshold": 0.3,
     "silence_duration": 420,
     "waiting_timeout": 120,
 }
-VALID_ENGINES = {"parakeet", "whisper"}
+VALID_ENGINES = {"parakeet", "whisper", "moonshine"}
 VALID_MODEL_SIZES = {"tiny", "base", "small", "medium", "large", "turbo"}
 VALID_MESSAGE_MODES = {"send", "draft"}
+MOONSHINE_MODEL_NAME = "moonshine-voice"
 NO_SPEECH_ERROR = "No speech detected"
 MIN_AUDIO_BYTES = 1400
 MIN_AUDIO_SAMPLES = 1600
@@ -52,6 +53,9 @@ _whisper_model_name = ""
 _faster_whisper_model = None
 _faster_whisper_model_name = ""
 _faster_whisper_error = ""
+_moonshine_transcriber = None
+_moonshine_model_name = ""
+_moonshine_error = ""
 _parakeet_model = None
 _parakeet_loaded = False
 _parakeet_error = ""
@@ -117,6 +121,8 @@ def get_config() -> dict[str, Any]:
 
 
 def get_loaded_model_name() -> str:
+    if _moonshine_transcriber is not None:
+        return _moonshine_model_name
     if _parakeet_loaded:
         return PARAKEET_MODEL_NAME
     if _faster_whisper_model is not None:
@@ -125,6 +131,8 @@ def get_loaded_model_name() -> str:
 
 
 def get_loaded_engine() -> str:
+    if _moonshine_transcriber is not None:
+        return "moonshine"
     if _parakeet_loaded:
         return "parakeet"
     if _faster_whisper_model is not None:
@@ -180,6 +188,24 @@ def get_faster_whisper_status() -> dict[str, Any]:
     }
 
 
+def moonshine_available() -> bool:
+    try:
+        import moonshine_voice  # noqa: F401
+
+        return True
+    except Exception:
+        return False
+
+
+def get_moonshine_status() -> dict[str, Any]:
+    return {
+        "available": moonshine_available(),
+        "loaded": _moonshine_transcriber is not None,
+        "model": _moonshine_model_name,
+        "error": _moonshine_error,
+    }
+
+
 def is_globally_enabled() -> bool:
     return plugins.determined_toggle_from_paths(
         True, reversed(plugins.get_plugin_roots(PLUGIN_NAME))
@@ -189,6 +215,15 @@ def is_globally_enabled() -> bool:
 async def preload(model_name: str | None = None, engine: str | None = None):
     cfg = get_config()
     resolved_engine = str(engine or cfg["engine"]).strip().lower()
+    if resolved_engine == "moonshine":
+        if moonshine_available():
+            try:
+                return await _preload_moonshine()
+            except Exception as e:
+                PrintStyle.warning(f"Moonshine STT preload failed; falling back to faster-whisper: {e}")
+        else:
+            PrintStyle.warning("Moonshine STT package not found; falling back to faster-whisper.")
+
     if resolved_engine == "parakeet":
         if is_parakeet_available():
             return await _preload_parakeet()
@@ -201,6 +236,51 @@ async def preload(model_name: str | None = None, engine: str | None = None):
         except Exception as e:
             PrintStyle.warning(f"faster-whisper preload failed; falling back to Whisper: {e}")
     return await _preload_whisper(resolved_model)
+
+
+async def _preload_moonshine():
+    global _moonshine_transcriber, _moonshine_model_name, _moonshine_error, is_updating_model
+
+    while is_updating_model:
+        await asyncio.sleep(0.1)
+
+    try:
+        is_updating_model = True
+        if _moonshine_transcriber is None:
+            NotificationManager.send_notification(
+                NotificationType.INFO,
+                NotificationPriority.NORMAL,
+                "Loading Moonshine speech model...",
+                display_time=99,
+                group="stt-preload",
+            )
+            try:
+                from moonshine_voice import ModelArch, Transcriber, get_assets_path
+
+                model_path = os.path.join(get_assets_path(), "tiny-en")
+                model_arch = ModelArch.TINY
+                PrintStyle.standard(f"Loading Moonshine model: {model_path}")
+                _moonshine_transcriber = Transcriber(
+                    model_path=model_path,
+                    model_arch=model_arch,
+                    update_interval=0.2,
+                )
+                _moonshine_model_name = MOONSHINE_MODEL_NAME
+                _moonshine_error = ""
+            except Exception as e:
+                _moonshine_transcriber = None
+                _moonshine_model_name = ""
+                _moonshine_error = str(e)
+                raise
+            NotificationManager.send_notification(
+                NotificationType.INFO,
+                NotificationPriority.NORMAL,
+                "Moonshine speech model loaded.",
+                display_time=2,
+                group="stt-preload",
+            )
+    finally:
+        is_updating_model = False
 
 
 async def _preload_parakeet():
@@ -330,6 +410,7 @@ async def is_downloading() -> bool:
 async def is_downloaded() -> bool:
     return (
         _parakeet_model is not None
+        or _moonshine_transcriber is not None
         or _faster_whisper_model is not None
         or _whisper_model is not None
     )
@@ -344,6 +425,17 @@ async def transcribe(
     cfg = normalize_config(config or get_config())
     engine = str(cfg["engine"])
     language = _resolve_language(str(cfg["language"]))
+
+    if engine == "moonshine":
+        if moonshine_available():
+            try:
+                return await _transcribe_moonshine(audio_bytes_b64, mime_type=mime_type)
+            except ValueError:
+                raise
+            except Exception as e:
+                PrintStyle.warning(f"Moonshine STT failed; falling back to faster-whisper: {e}")
+        else:
+            PrintStyle.warning("Moonshine STT package not found; falling back to faster-whisper.")
 
     if engine == "parakeet" and is_parakeet_available():
         try:
@@ -481,6 +573,48 @@ async def _transcribe_faster_whisper(
             "segments": normalized_segments,
             "engine": "faster-whisper",
             "model": model_name,
+        }
+    finally:
+        _remove_temp_file(temp_path)
+
+
+async def _transcribe_moonshine(
+    audio_bytes_b64: str,
+    *,
+    mime_type: str = "audio/webm",
+) -> dict[str, Any]:
+    audio_bytes, temp_path = _write_temp_audio(audio_bytes_b64, mime_type)
+
+    try:
+        decoded_audio = _load_audio(temp_path, mime_type, audio_bytes)
+        if getattr(decoded_audio, "size", 0) < MIN_AUDIO_SAMPLES:
+            raise ValueError(NO_SPEECH_ERROR)
+        if _is_effectively_silent(decoded_audio):
+            raise ValueError(NO_SPEECH_ERROR)
+
+        await _preload_moonshine()
+
+        transcript = _moonshine_transcriber.transcribe_without_streaming(  # type: ignore[union-attr]
+            decoded_audio.astype(np.float32).tolist(),
+            sample_rate=16000,
+        )
+        segments = [
+            {
+                "start": float(getattr(line, "start_time", 0.0)),
+                "end": float(getattr(line, "start_time", 0.0) + getattr(line, "duration", 0.0)),
+                "text": str(getattr(line, "text", "") or "").strip(),
+            }
+            for line in getattr(transcript, "lines", [])
+        ]
+        text = " ".join(segment["text"] for segment in segments).strip()
+        if not text:
+            raise ValueError(NO_SPEECH_ERROR)
+        return {
+            "text": text,
+            "language": "en",
+            "segments": segments,
+            "engine": "moonshine",
+            "model": _moonshine_model_name or MOONSHINE_MODEL_NAME,
         }
     finally:
         _remove_temp_file(temp_path)

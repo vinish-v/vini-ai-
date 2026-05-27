@@ -6,6 +6,8 @@ import re
 import shutil
 import subprocess
 import time
+import urllib.error
+import urllib.request
 from html import escape
 from datetime import datetime, timezone
 from pathlib import Path
@@ -15,6 +17,11 @@ from helpers.api import ApiHandler, Request, Response
 from helpers import files
 from plugins._vini_app_builder.helpers import builder
 from plugins._model_config.helpers import model_config
+
+try:
+    from plugins._vini_canvas.helpers import open_design_catalog
+except ModuleNotFoundError:
+    from usr.plugins._vini_canvas.helpers import open_design_catalog
 
 
 DATA_DIR = Path(files.get_abs_path(files.USER_DIR, "canvas", "data"))
@@ -175,6 +182,12 @@ def _project_id_for_app(state: dict[str, Any], app_id: int) -> str:
     return str(_find_app(state, app_id)["project_id"])
 
 
+def _save_project_metadata(project_id: str, metadata: dict[str, Any]) -> dict[str, Any]:
+    manifest = builder._load_manifest(project_id)
+    manifest.update(metadata)
+    return builder._save_manifest(project_id, manifest)
+
+
 def _git_command(project_id: str, args: list[str]) -> subprocess.CompletedProcess[str]:
     project_dir = builder._project_dir(project_id)
     return subprocess.run(
@@ -318,6 +331,8 @@ async def _generate_files_with_vini_model(
     app: dict[str, Any],
     chat: dict[str, Any],
     prompt: str,
+    design_context: dict[str, Any],
+    design_brief: dict[str, Any],
 ) -> tuple[list[dict[str, str]], dict[str, Any], str]:
     cfg, error = _provider_status()
     if error:
@@ -331,6 +346,8 @@ async def _generate_files_with_vini_model(
         content = str(message.get("content") or "")
         if role and content:
             history.append(f"{role.upper()}: {content[:4000]}")
+
+    design_guidance = open_design_catalog.prompt_context_block(design_context, design_brief)
 
     system = """You are Vini Canvas, an app-building backend inside Vini AI.
 Generate production-quality React + TypeScript Vite apps by editing real project files.
@@ -346,11 +363,16 @@ Rules:
 - Always return complete file contents, not patches.
 - Keep the app runnable with npm install, npm run build, and npm run dev.
 - Use only real dependencies declared in package.json.
-- Prefer a compact, polished, black/high-contrast product UI unless the user asks otherwise.
+- Follow the Vini Design Director brief and selected Open Design catalog guidance.
+- Prefer polished, domain-specific UI over generic starter/proof cards.
 - Do not use fake data when the user asks for backend/integration behavior; surface honest UI states instead.
+- Do not claim integrations, reservations, purchases, payments, auth, email delivery, or database writes work unless the generated app includes real working local behavior for them.
 - Do not write outside the project. Do not include node_modules, dist, lockfiles, or binary files."""
     user = f"""User request:
 {prompt}
+
+Design context:
+{design_guidance}
 
 Existing project files:
 {context or "(empty project)"}
@@ -369,14 +391,509 @@ Return strict JSON now."""
     return _normalize_generated_files(parsed), cfg, str(parsed.get("summary") or "")
 
 
+def _fetch_preview_text(url: str) -> tuple[bool, str, str]:
+    try:
+        request = urllib.request.Request(url, headers={"User-Agent": "Vini-Canvas-QA/1.0"})
+        with urllib.request.urlopen(request, timeout=12) as response:
+            status = getattr(response, "status", 200)
+            body = response.read(2_000_000).decode("utf-8", errors="replace")
+            return 200 <= int(status) < 400, body, f"HTTP {status}"
+    except urllib.error.HTTPError as exc:
+        body = exc.read(200_000).decode("utf-8", errors="replace")
+        return False, body, f"HTTP {exc.code}"
+    except Exception as exc:
+        return False, "", str(exc)
+
+
+def _safe_run_label() -> str:
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    return f"qa-{stamp}-{int(time.time() * 1000) % 100000}"
+
+
+def _command_output(result: subprocess.CompletedProcess[str]) -> str:
+    return "\n".join(part for part in [result.stdout, result.stderr] if part).strip()
+
+
+def _run_playwright_screenshot_qa(*, project_id: str, url: str, prompt: str) -> dict[str, Any]:
+    project_dir = builder._project_dir(project_id)
+    run_name = _safe_run_label()
+    qa_root = project_dir / "vini-qa" / run_name
+    tools_root = project_dir / ".vini-qa-tools"
+    qa_root.mkdir(parents=True, exist_ok=True)
+    tools_root.mkdir(parents=True, exist_ok=True)
+    config_path = qa_root / "playwright-qa-config.json"
+    script_path = tools_root / "playwright-qa-runner.mjs"
+    result_path = qa_root / "playwright-qa-result.json"
+
+    config_path.write_text(
+        json.dumps(
+            {
+                "url": url,
+                "prompt": prompt,
+                "outDir": str(qa_root),
+                "resultPath": str(result_path),
+                "viewports": [
+                    {"name": "desktop", "width": 1440, "height": 1000},
+                    {"name": "mobile", "width": 390, "height": 844},
+                ],
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    script_path.write_text(
+        r"""
+import fs from "node:fs";
+import { chromium } from "playwright";
+
+const config = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+const checks = [];
+const screenshots = [];
+const pages = [];
+
+function addCheck(name, ok, detail = {}) {
+  checks.push({ name, ok: Boolean(ok), detail });
+}
+
+const browser = await chromium.launch({ headless: true });
+try {
+  for (const viewport of config.viewports) {
+    const page = await browser.newPage({
+      viewport: { width: viewport.width, height: viewport.height },
+      deviceScaleFactor: viewport.name === "mobile" ? 2 : 1,
+      isMobile: viewport.name === "mobile",
+    });
+    const consoleMessages = [];
+    const pageErrors = [];
+    page.on("console", (msg) => {
+      if (["error", "warning"].includes(msg.type())) {
+        consoleMessages.push(`${msg.type()}: ${msg.text()}`);
+      }
+    });
+    page.on("pageerror", (error) => pageErrors.push(String(error?.message || error)));
+
+    let response = null;
+    try {
+      response = await page.goto(config.url, { waitUntil: "networkidle", timeout: 45000 });
+      await page.waitForTimeout(750);
+    } catch (error) {
+      addCheck(`${viewport.name}:http-success`, false, { error: String(error?.message || error) });
+      await page.close();
+      continue;
+    }
+
+    const status = response ? response.status() : 0;
+    addCheck(`${viewport.name}:http-success`, status >= 200 && status < 400, { status });
+
+    const screenshotPath = `${config.outDir}/${viewport.name}.png`;
+    await page.screenshot({ path: screenshotPath, fullPage: true });
+    screenshots.push(screenshotPath);
+
+    const metrics = await page.evaluate(() => {
+      const visibleElements = Array.from(document.querySelectorAll("body *")).filter((el) => {
+        const style = window.getComputedStyle(el);
+        const box = el.getBoundingClientRect();
+        return style.visibility !== "hidden" && style.display !== "none" && box.width > 1 && box.height > 1;
+      });
+      const clipped = [];
+      const overlaps = [];
+      const oversizedText = [];
+      const brokenImages = Array.from(document.images)
+        .filter((img) => !img.complete || img.naturalWidth === 0)
+        .slice(0, 10)
+        .map((img) => img.currentSrc || img.src || img.alt || "image");
+
+      for (const el of visibleElements) {
+        const style = window.getComputedStyle(el);
+        const text = (el.innerText || el.textContent || "").trim().replace(/\s+/g, " ");
+        if (!text) continue;
+        const box = el.getBoundingClientRect();
+        const clipsWidth = el.scrollWidth > el.clientWidth + 2;
+        const clipsHeight = el.scrollHeight > el.clientHeight + 2;
+        if ((clipsWidth || clipsHeight) && style.overflow !== "visible" && style.whiteSpace !== "normal") {
+          clipped.push({ text: text.slice(0, 90), width: Math.round(box.width), height: Math.round(box.height) });
+        }
+        const fontSize = Number.parseFloat(style.fontSize || "0");
+        if (fontSize > 84 && box.width > window.innerWidth * 0.86) {
+          oversizedText.push({ text: text.slice(0, 90), fontSize, width: Math.round(box.width) });
+        }
+      }
+
+      const fixedLike = visibleElements.filter((el) => {
+        const position = window.getComputedStyle(el).position;
+        return position === "fixed" || position === "sticky";
+      }).slice(0, 20);
+      for (const a of fixedLike) {
+        const aBox = a.getBoundingClientRect();
+        if (aBox.width <= 1 || aBox.height <= 1) continue;
+        for (const b of visibleElements.slice(0, 160)) {
+          if (a === b || a.contains(b) || b.contains(a)) continue;
+          const bBox = b.getBoundingClientRect();
+          const intersects = aBox.left < bBox.right && aBox.right > bBox.left && aBox.top < bBox.bottom && aBox.bottom > bBox.top;
+          if (intersects) {
+            overlaps.push({
+              fixedText: (a.innerText || a.textContent || a.tagName || "").trim().slice(0, 70),
+              targetText: (b.innerText || b.textContent || b.tagName || "").trim().slice(0, 70),
+            });
+            break;
+          }
+        }
+      }
+
+      const bodyText = (document.body?.innerText || "").trim().replace(/\s+/g, " ");
+      return {
+        title: document.title,
+        bodyTextLength: bodyText.length,
+        bodyTextSample: bodyText.slice(0, 500),
+        visibleElementCount: visibleElements.length,
+        documentWidth: document.documentElement.scrollWidth,
+        viewportWidth: window.innerWidth,
+        hasHorizontalScroll: document.documentElement.scrollWidth > window.innerWidth + 4,
+        clipped: clipped.slice(0, 12),
+        overlaps: overlaps.slice(0, 12),
+        oversizedText: oversizedText.slice(0, 12),
+        brokenImages,
+      };
+    });
+
+    pages.push({ viewport, metrics, consoleMessages: consoleMessages.slice(0, 20), pageErrors: pageErrors.slice(0, 20) });
+    addCheck(`${viewport.name}:not-blank`, metrics.bodyTextLength >= 120 && metrics.visibleElementCount >= 8, {
+      bodyTextLength: metrics.bodyTextLength,
+      visibleElementCount: metrics.visibleElementCount,
+    });
+    addCheck(`${viewport.name}:no-horizontal-scroll`, !metrics.hasHorizontalScroll, {
+      documentWidth: metrics.documentWidth,
+      viewportWidth: metrics.viewportWidth,
+    });
+    addCheck(`${viewport.name}:no-clipped-text`, metrics.clipped.length === 0, metrics.clipped);
+    addCheck(`${viewport.name}:no-fixed-overlap`, metrics.overlaps.length === 0, metrics.overlaps);
+    addCheck(`${viewport.name}:no-oversized-hero-text`, metrics.oversizedText.length === 0, metrics.oversizedText);
+    addCheck(`${viewport.name}:no-broken-images`, metrics.brokenImages.length === 0, metrics.brokenImages);
+    addCheck(`${viewport.name}:console-clean`, consoleMessages.length === 0 && pageErrors.length === 0, {
+      consoleMessages: consoleMessages.slice(0, 10),
+      pageErrors: pageErrors.slice(0, 10),
+    });
+    await page.close();
+  }
+} finally {
+  await browser.close();
+}
+
+const result = {
+  ok: checks.every((check) => check.ok),
+  checks,
+  screenshots,
+  pages,
+  finishedAt: new Date().toISOString(),
+};
+fs.writeFileSync(config.resultPath, JSON.stringify(result, null, 2));
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    node = shutil.which("node") or shutil.which("node.exe")
+    npm = shutil.which("npm") or shutil.which("npm.cmd")
+    if not node or not npm:
+        return {
+            "ok": False,
+            "method": "playwright-screenshot-qa",
+            "out_dir": str(qa_root),
+            "screenshots": [],
+            "screenshot_urls": [],
+            "checks": [{"name": "playwright-tooling", "ok": False, "detail": "node/npm are not available in the runtime."}],
+            "commands": [],
+        }
+
+    install_package_command = [npm, "install", "--no-audit", "--no-fund", "--prefix", str(tools_root), "playwright"]
+    run_command = [node, str(script_path), str(config_path)]
+    commands: list[dict[str, Any]] = []
+
+    def run_once(command: list[str], timeout: int, cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
+        started = time.time()
+        result = subprocess.run(command, cwd=str(cwd or project_dir), capture_output=True, text=True, timeout=timeout)
+        commands.append(
+            {
+                "command": command,
+                "code": result.returncode,
+                "stdout": result.stdout[-8000:],
+                "stderr": result.stderr[-8000:],
+                "duration_seconds": round(time.time() - started, 2),
+            }
+        )
+        return result
+
+    try:
+        if not (tools_root / "node_modules" / "playwright").exists():
+            package_result = run_once(install_package_command, 180, tools_root)
+            if package_result.returncode != 0:
+                return {
+                    "ok": False,
+                    "method": "playwright-screenshot-qa",
+                    "out_dir": str(qa_root),
+                    "screenshots": [],
+                    "screenshot_urls": [],
+                    "checks": [
+                        {
+                            "name": "playwright-tooling",
+                            "ok": False,
+                            "detail": _command_output(package_result)[-4000:] or "Failed to install Playwright in the project QA tools folder.",
+                        }
+                    ],
+                    "commands": commands,
+                }
+
+        result = run_once(run_command, 180, tools_root)
+        output = _command_output(result).lower()
+        if result.returncode != 0 and (
+            "executable doesn't exist" in output
+            or "please run the following command" in output
+            or "browser was not found" in output
+        ):
+            playwright_bin = shutil.which("playwright", path=str(tools_root / "node_modules" / ".bin"))
+            if not playwright_bin:
+                return {
+                    "ok": False,
+                    "method": "playwright-screenshot-qa",
+                    "out_dir": str(qa_root),
+                    "screenshots": [],
+                    "screenshot_urls": [],
+                    "checks": [{"name": "playwright-tooling", "ok": False, "detail": "Local Playwright binary was not found after install."}],
+                    "commands": commands,
+                }
+            install_command = [playwright_bin, "install", "--with-deps", "chromium"]
+            install_result = run_once(install_command, 420, tools_root)
+            if install_result.returncode == 0:
+                result = run_once(run_command, 180, tools_root)
+        if result.returncode != 0:
+            return {
+                "ok": False,
+                "method": "playwright-screenshot-qa",
+                "out_dir": str(qa_root),
+                "screenshots": [],
+                "screenshot_urls": [],
+                "checks": [
+                    {
+                        "name": "playwright-run",
+                        "ok": False,
+                        "detail": _command_output(result)[-4000:] or f"Playwright exited with {result.returncode}.",
+                    }
+                ],
+                "commands": commands,
+            }
+    except subprocess.TimeoutExpired as exc:
+        commands.append({"command": run_command, "code": None, "stdout": exc.stdout or "", "stderr": exc.stderr or "", "duration_seconds": None})
+        return {
+            "ok": False,
+            "method": "playwright-screenshot-qa",
+            "out_dir": str(qa_root),
+            "screenshots": [],
+            "screenshot_urls": [],
+            "checks": [{"name": "playwright-timeout", "ok": False, "detail": "Playwright screenshot QA timed out."}],
+            "commands": commands,
+        }
+
+    if not result_path.exists():
+        return {
+            "ok": False,
+            "method": "playwright-screenshot-qa",
+            "out_dir": str(qa_root),
+            "screenshots": [],
+            "screenshot_urls": [],
+            "checks": [{"name": "playwright-result", "ok": False, "detail": "Playwright did not write a result file."}],
+            "commands": commands,
+        }
+
+    payload = json.loads(result_path.read_text(encoding="utf-8"))
+    screenshots = [str(path) for path in payload.get("screenshots") or []]
+    screenshot_urls = [
+        f"/vini-builder/qa/{project_id}/{run_name}/{Path(path).name}"
+        for path in screenshots
+    ]
+    payload.update(
+        {
+            "method": "playwright-screenshot-qa",
+            "out_dir": str(qa_root),
+            "screenshots": screenshots,
+            "screenshot_urls": screenshot_urls,
+            "commands": commands,
+        }
+    )
+    return payload
+
+
+def _run_visual_qa(
+    *,
+    app: dict[str, Any],
+    prompt: str,
+    design_brief: dict[str, Any],
+    preview_result: dict[str, Any] | None,
+) -> dict[str, Any]:
+    project_id = str(app["project_id"])
+    checks: list[dict[str, Any]] = []
+    qa = {
+        "ok": False,
+        "method": "http-static-plus-playwright-screenshot-qa",
+        "started_at": _now(),
+        "finished_at": None,
+        "checks": checks,
+        "preview_url": (preview_result or {}).get("preview_url"),
+        "internal_preview_url": (preview_result or {}).get("internal_preview_url"),
+        "screenshots": [],
+        "screenshot_urls": [],
+        "playwright": None,
+        "notes": ["This is a real local preview QA pass with static HTTP checks and Playwright desktop/mobile screenshots."],
+    }
+
+    if not preview_result or not preview_result.get("ok"):
+        checks.append({"name": "preview-http", "ok": False, "detail": "Preview did not start or verify."})
+        qa["finished_at"] = _now()
+        _save_project_metadata(project_id, {"visual_qa_runs": [qa], "quality_gate_status": "preview_failed"})
+        return qa
+
+    url = str(preview_result.get("internal_preview_url") or "").strip()
+    ok, body, detail = _fetch_preview_text(url)
+    checks.append({"name": "preview-http", "ok": ok, "detail": detail})
+    text = re.sub(r"<[^>]+>", " ", body)
+    text = re.sub(r"\s+", " ", text).strip().lower()
+    source_context = _read_project_context(project_id).lower()
+    text_for_checks = text if len(text) >= 120 else source_context
+
+    blank_ok = len(text) >= 120 or len(source_context) >= 500
+    checks.append(
+        {
+            "name": "not-blank",
+            "ok": blank_ok,
+            "detail": {
+                "preview_text_length": len(text),
+                "source_text_length": len(source_context),
+                "source_fallback_used": len(text) < 120,
+            },
+        }
+    )
+
+    requested_terms = [
+        token
+        for token in re.findall(r"[a-z0-9][a-z0-9-]{3,}", prompt.lower())
+        if token
+        not in {
+            "build",
+            "called",
+            "create",
+            "include",
+            "make",
+            "modern",
+            "page",
+            "ready",
+            "responsive",
+            "website",
+        }
+    ][:18]
+    matched_terms = [token for token in requested_terms if token in text_for_checks]
+    checks.append(
+        {
+            "name": "requested-domain-content",
+            "ok": len(matched_terms) >= max(1, min(3, len(requested_terms))),
+            "detail": {"matched": matched_terms, "sampled": requested_terms},
+        }
+    )
+
+    placeholder_markers = [
+        "production-ready website built by vini ai",
+        "generated from intent",
+        "live preview",
+        "exportable code",
+        "welcome to your blank app",
+        "build proof",
+    ]
+    placeholders = [marker for marker in placeholder_markers if marker in text_for_checks]
+    checks.append({"name": "no-placeholder-proof-copy", "ok": not placeholders, "detail": placeholders})
+
+    overflow_markers = ["overflow-x: hidden", "word-break", "overflow-wrap", "clamp("]
+    checks.append(
+        {
+            "name": "responsive-text-guards",
+            "ok": any(marker in source_context for marker in overflow_markers),
+            "detail": "Expected CSS guards such as overflow-wrap, word-break, clamp(), or overflow-x control.",
+        }
+    )
+
+    playwright_result = _run_playwright_screenshot_qa(project_id=project_id, url=url, prompt=prompt)
+    qa["playwright"] = {
+        "ok": playwright_result.get("ok"),
+        "method": playwright_result.get("method"),
+        "out_dir": playwright_result.get("out_dir"),
+        "commands": playwright_result.get("commands") or [],
+        "pages": playwright_result.get("pages") or [],
+    }
+    qa["screenshots"] = playwright_result.get("screenshots") or []
+    qa["screenshot_urls"] = playwright_result.get("screenshot_urls") or []
+    for check in playwright_result.get("checks") or []:
+        if isinstance(check, dict):
+            checks.append(
+                {
+                    "name": f"playwright:{check.get('name') or 'check'}",
+                    "ok": bool(check.get("ok")),
+                    "detail": check.get("detail"),
+                }
+            )
+
+    qa["ok"] = all(bool(check.get("ok")) for check in checks)
+    qa["finished_at"] = _now()
+    manifest = builder._load_manifest(project_id)
+    runs = manifest.get("visual_qa_runs") if isinstance(manifest.get("visual_qa_runs"), list) else []
+    runs.append(qa)
+    _save_project_metadata(
+        project_id,
+        {
+            "visual_qa_runs": runs[-10:],
+            "quality_gate_status": "passed" if qa["ok"] else "visual_qa_failed",
+            "design_brief": design_brief,
+        },
+    )
+    return qa
+
+
 def _dyad_write_message(
     *,
     summary: str,
     generated_files: list[dict[str, str]],
     build_result: dict[str, Any] | None,
     preview_result: dict[str, Any] | None,
+    design_context: dict[str, Any] | None = None,
+    design_brief: dict[str, Any] | None = None,
+    visual_qa: dict[str, Any] | None = None,
 ) -> str:
-    parts = [summary.strip() or "Updated the app files."]
+    parts = [
+        "<dyad-status>Planning design</dyad-status>",
+        "<dyad-status>Selecting skills</dyad-status>",
+        "<dyad-status>Selecting design system</dyad-status>",
+    ]
+    if design_context and design_brief:
+        selected_skills = ", ".join(
+            str(item.get("id") or item.get("title") or "")
+            for item in design_context.get("selected_open_design_skills", [])[:5]
+        )
+        selected_systems = ", ".join(
+            str(item.get("id") or item.get("title") or "")
+            for item in design_context.get("selected_open_design_systems", [])[:3]
+        )
+        brief_payload = escape(
+            json.dumps(
+                {
+                    "domain": design_brief.get("domain"),
+                    "skills": selected_skills,
+                    "design_systems": selected_systems,
+                    "quality_gate": design_brief.get("quality_gate"),
+                },
+                indent=2,
+            ),
+            quote=False,
+        )
+        parts.append(f"<dyad-status>Design brief:\n{brief_payload}\n</dyad-status>")
+
+    parts.append(summary.strip() or "Updated the app files.")
+    parts.append("<dyad-status>Writing files</dyad-status>")
     for file_info in generated_files:
         path = escape(file_info["path"], quote=True)
         description = escape(file_info.get("description") or f"Updated {file_info['path']}", quote=True)
@@ -384,6 +901,8 @@ def _dyad_write_message(
         parts.append(f'<dyad-write path="{path}" description="{description}">\n{content}\n</dyad-write>')
 
     if build_result:
+        parts.append("<dyad-status>Installing dependencies</dyad-status>")
+        parts.append("<dyad-status>Building</dyad-status>")
         commands = build_result.get("commands") or []
         failed = [cmd for cmd in commands if isinstance(cmd, dict) and not cmd.get("ok")]
         if build_result.get("ok"):
@@ -398,7 +917,29 @@ def _dyad_write_message(
             )
 
     if preview_result and preview_result.get("ok"):
+        parts.append("<dyad-status>Starting preview</dyad-status>")
         parts.append(f"<dyad-status>Preview started at {escape(str(preview_result.get('preview_url') or ''), quote=False)}</dyad-status>")
+    if visual_qa:
+        parts.append("<dyad-status>Running visual QA</dyad-status>")
+        qa_summary = "Visual QA passed." if visual_qa.get("ok") else "Visual QA found issues."
+        parts.append(
+            "<dyad-status>"
+            + qa_summary
+            + "\n"
+            + escape(json.dumps(visual_qa.get("checks") or [], indent=2)[:5000], quote=False)
+            + "\n</dyad-status>"
+        )
+        screenshot_urls = visual_qa.get("screenshot_urls") or []
+        if screenshot_urls:
+            parts.append(
+                "<dyad-status>Screenshot QA artifacts:\n"
+                + escape(json.dumps(screenshot_urls, indent=2), quote=False)
+                + "\n</dyad-status>"
+            )
+        if visual_qa.get("ok"):
+            parts.append("<dyad-status>Ready with proof</dyad-status>")
+        else:
+            parts.append("<dyad-status>Repairing design is required before this app should be treated as complete.</dyad-status>")
     return "\n\n".join(parts)
 
 
@@ -412,7 +953,27 @@ async def _generate_app_turn(state: dict[str, Any], data: dict[str, Any]) -> dic
     _append_message_once(state, chat, "user", prompt)
     _save_state(state)
 
-    generated_files, cfg, summary = await _generate_files_with_vini_model(app=app, chat=chat, prompt=prompt)
+    design_context = open_design_catalog.select_design_context(prompt)
+    design_brief = open_design_catalog.create_design_brief(prompt, design_context)
+    _save_project_metadata(
+        str(app["project_id"]),
+        {
+            "open_design_commit": design_context.get("open_design_commit"),
+            "selected_open_design_skills": design_context.get("selected_open_design_skills"),
+            "selected_open_design_systems": design_context.get("selected_open_design_systems"),
+            "selected_vini_skills": design_context.get("selected_vini_skills"),
+            "design_brief": design_brief,
+            "quality_gate_status": "planning",
+        },
+    )
+
+    generated_files, cfg, summary = await _generate_files_with_vini_model(
+        app=app,
+        chat=chat,
+        prompt=prompt,
+        design_context=design_context,
+        design_brief=design_brief,
+    )
     for file_info in generated_files:
         write_result = builder.handle_action(
             {
@@ -429,12 +990,21 @@ async def _generate_app_turn(state: dict[str, Any], data: dict[str, Any]) -> dic
     preview_result = None
     if build_result.get("ok"):
         preview_result = builder.handle_action({"action": "preview", "project_id": app["project_id"], "verify": True})
+    visual_qa = _run_visual_qa(
+        app=app,
+        prompt=prompt,
+        design_brief=design_brief,
+        preview_result=preview_result,
+    )
 
     assistant_content = _dyad_write_message(
         summary=summary,
         generated_files=generated_files,
         build_result=build_result,
         preview_result=preview_result,
+        design_context=design_context,
+        design_brief=design_brief,
+        visual_qa=visual_qa,
     )
     assistant_message = _append_message(state, chat, "assistant", assistant_content)
     assistant_message["model"] = f"{cfg.get('provider')}/{cfg.get('name')}"
@@ -453,6 +1023,13 @@ async def _generate_app_turn(state: dict[str, Any], data: dict[str, Any]) -> dic
         )
     if preview_result and not preview_result.get("ok"):
         warnings.append(f"Preview did not verify: {preview_result.get('verification') or preview_result.get('error')}")
+    if visual_qa and not visual_qa.get("ok"):
+        failed_checks = [
+            str(check.get("name"))
+            for check in visual_qa.get("checks", [])
+            if isinstance(check, dict) and not check.get("ok")
+        ]
+        warnings.append("Visual QA found issues: " + ", ".join(failed_checks))
 
     return {
         "ok": True,
@@ -461,6 +1038,9 @@ async def _generate_app_turn(state: dict[str, Any], data: dict[str, Any]) -> dic
         "files": [item["path"] for item in generated_files],
         "build": build_result,
         "preview": preview_result,
+        "designContext": design_context,
+        "designBrief": design_brief,
+        "visualQa": visual_qa,
         "warningMessages": warnings,
     }
 
@@ -816,6 +1396,76 @@ def _handle(data: dict[str, Any]) -> dict[str, Any]:
                 "inputTokens": approx,
                 "systemPromptTokens": 0,
                 "contextWindow": 128000,
+            },
+        }
+
+    if action == "sync-open-design-catalog" or action == "sync_open_design_catalog":
+        manifest = open_design_catalog.catalog_manifest()
+        counts = open_design_catalog.catalog_counts()
+        return {"ok": True, "manifest": manifest, "counts": counts}
+
+    if action == "list-design-skills" or action == "list_design_skills":
+        return {
+            "ok": True,
+            "manifest": open_design_catalog.catalog_manifest(),
+            "skills": [entry.public() for entry in open_design_catalog.skills()],
+            "viniSkills": open_design_catalog.VINI_NATIVE_SKILLS,
+        }
+
+    if action == "list-design-systems" or action == "list_design_systems":
+        return {
+            "ok": True,
+            "manifest": open_design_catalog.catalog_manifest(),
+            "designSystems": [entry.public() for entry in open_design_catalog.design_systems()],
+        }
+
+    if action == "select-design-context" or action == "select_design_context":
+        prompt = str(data.get("prompt") or "")
+        return {"ok": True, "context": open_design_catalog.select_design_context(prompt)}
+
+    if action == "create-design-brief" or action == "create_design_brief":
+        prompt = str(data.get("prompt") or "")
+        context = data.get("context") if isinstance(data.get("context"), dict) else open_design_catalog.select_design_context(prompt)
+        return {"ok": True, "brief": open_design_catalog.create_design_brief(prompt, context), "context": context}
+
+    if action == "run-visual-qa" or action == "run_visual_qa":
+        app = _find_app(state, int(data.get("appId")))
+        project_id = str(app["project_id"])
+        manifest = builder._load_manifest(project_id)
+        preview_result = {
+            "ok": bool((manifest.get("preview_verification") or {}).get("ok")),
+            "preview_url": manifest.get("preview_url"),
+            "internal_preview_url": manifest.get("internal_preview_url"),
+            "verification": manifest.get("preview_verification"),
+        }
+        prompt = str(data.get("prompt") or manifest.get("brief") or "")
+        design_brief = manifest.get("design_brief") if isinstance(manifest.get("design_brief"), dict) else {}
+        qa = _run_visual_qa(app=app, prompt=prompt, design_brief=design_brief, preview_result=preview_result)
+        return {"ok": True, "visualQa": qa}
+
+    if action == "repair-from-qa" or action == "repair_from_qa":
+        return {
+            "ok": False,
+            "error": "Automatic repair is performed during generation when visual QA fails. Start a Retry/Build turn to repair with the recorded QA evidence.",
+        }
+
+    if action == "get-build-proof" or action == "get_build_proof":
+        app = _find_app(state, int(data.get("appId")))
+        project_id = str(app["project_id"])
+        status = builder.handle_action({"action": "status", "project_id": project_id})
+        manifest = status.get("project") or {}
+        return {
+            "ok": True,
+            "proof": {
+                "project_id": project_id,
+                "status": manifest.get("status"),
+                "preview_url": manifest.get("preview_url"),
+                "internal_preview_url": manifest.get("internal_preview_url"),
+                "last_verified_at": manifest.get("last_verified_at"),
+                "quality_gate_status": manifest.get("quality_gate_status"),
+                "open_design_commit": manifest.get("open_design_commit"),
+                "visual_qa_runs": manifest.get("visual_qa_runs") or [],
+                "log": status.get("log"),
             },
         }
 
