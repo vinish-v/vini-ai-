@@ -1149,6 +1149,10 @@ export async function drawMessageTool({
     return drawMessageToolSimple({ ...arguments[0], code: "EYE" });
   } else if (kvps._tool_name === "search_engine") {
     return drawMessageToolSimple({ ...arguments[0], code: "WEB" });
+  } else if (kvps._tool_name === "browser") {
+    return drawMessageBrowserTool(arguments[0]);
+  } else if (kvps._tool_name === "scripted_browser_task") {
+    return drawMessageScriptedBrowserTask(arguments[0]);
   } else if (kvps._tool_name.startsWith("memory_")) {
     return drawMessageToolSimple({ ...arguments[0], code: "MEM" });
   }
@@ -1166,6 +1170,123 @@ export async function drawMessageTool({
   return drawMessageToolSimple({ ...arguments[0] });
 }
 
+function parseToolJsonContent(content) {
+  const text = String(content || "").trim();
+  if (!text || !/^[\[{]/.test(text)) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
+function compactPathLabel(path = "") {
+  const value = String(path || "");
+  return value.split(/[\\/]/).filter(Boolean).slice(-3).join("/") || value;
+}
+
+function imageKvpFromPaths(paths = []) {
+  return paths
+    .filter(Boolean)
+    .slice(0, 6)
+    .map((path) => String(path).startsWith("img://") ? String(path) : `img://${path}`);
+}
+
+function browserProofSummary(payload = {}) {
+  const status = payload.status || (payload.ok === false ? "failed" : "completed");
+  const url = payload.url || payload.currentUrl || payload.state?.currentUrl || payload.script_report?.url || "";
+  const title = payload.title || payload.state?.title || payload.script_report?.title || "";
+  return [
+    `Status: ${status}`,
+    title && `Title: ${title}`,
+    url && `URL: ${url}`,
+  ].filter(Boolean).join("\n");
+}
+
+function drawMessageBrowserTool(args) {
+  const payload = parseToolJsonContent(args.content) || {};
+  const snapshot = args.kvps?.browser_snapshot || payload.browser_snapshot || payload.snapshot || {};
+  const displayKvps = { ...(args.kvps || {}) };
+  delete displayKvps._tool_name;
+  delete displayKvps.browser_snapshot;
+
+  const proofImages = imageKvpFromPaths([
+    snapshot.uri,
+    snapshot.path,
+    snapshot.a0_path,
+    payload.path,
+    payload.a0_path,
+  ]);
+  if (proofImages.length) {
+    displayKvps["icon://image[Proof]"] = proofImages;
+  }
+  const url = payload.url || payload.currentUrl || payload.state?.currentUrl || snapshot.url || "";
+  if (url) displayKvps["icon://link[URL]"] = url;
+  const validation = payload.validation || payload.action?.validation || null;
+  if (validation) displayKvps["icon://verified[Validation]"] = validation;
+
+  return drawMessageToolSimple({
+    ...args,
+    code: "BRW",
+    content: browserProofSummary(payload || snapshot) || String(args.content || ""),
+    displayKvps,
+    classes: ["browser-proof-step"],
+    contentClasses: ["browser-proof-content"],
+  });
+}
+
+function drawMessageScriptedBrowserTask(args) {
+  const payload = parseToolJsonContent(args.content) || {};
+  const run = payload.run || payload;
+  const scriptReport = run.script_report || payload.script_report || {};
+  const displayKvps = { ...(args.kvps || {}) };
+  delete displayKvps._tool_name;
+
+  const screenshots = imageKvpFromPaths([
+    ...(Array.isArray(run.screenshots) ? run.screenshots : []),
+    ...(Array.isArray(scriptReport.screenshots) ? scriptReport.screenshots : []),
+  ]);
+  if (screenshots.length) {
+    displayKvps["icon://image[Proof]"] = screenshots;
+  }
+
+  const logs = [
+    ...(Array.isArray(run.logs) ? run.logs : []),
+    run.stdout_path,
+    run.stderr_path,
+    scriptReport.log_path,
+  ].filter(Boolean);
+  if (logs.length) {
+    displayKvps["icon://article[Logs]"] = logs.slice(0, 8).map(compactPathLabel);
+  }
+
+  const artifacts = [
+    payload.workspace,
+    payload.plan_path,
+    payload.final_script_path,
+    run.run_dir,
+  ].filter(Boolean);
+  if (artifacts.length) {
+    displayKvps["icon://folder[Artifacts]"] = artifacts.map(compactPathLabel);
+  }
+
+  const summary = [
+    browserProofSummary({ ...payload, ...scriptReport }),
+    payload.workspace_id && `Workspace: ${payload.workspace_id}`,
+    Number.isFinite(Number(run.exit_code)) && `Exit code: ${run.exit_code}`,
+    run.duration_ms !== undefined && `Duration: ${run.duration_ms} ms`,
+  ].filter(Boolean).join("\n");
+
+  return drawMessageToolSimple({
+    ...args,
+    code: "RUN",
+    content: summary || String(args.content || ""),
+    displayKvps,
+    classes: ["browser-proof-step", "scripted-browser-proof-step"],
+    contentClasses: ["browser-proof-content"],
+  });
+}
+
 /**
  * @param {MessageHandlerArgs & Record<string, any>} param0
  * @returns {MessageHandlerResult}
@@ -1180,6 +1301,8 @@ export function drawMessageToolSimple({
   agentno = 0,
   code,
   displayKvps,
+  classes,
+  contentClasses = [],
   ...additional
 }) {
   const title = cleanStepTitle(heading);
@@ -1204,10 +1327,10 @@ export function drawMessageToolSimple({
     id,
     title,
     code: code || "USE",
-    classes: undefined,
+    classes,
     kvps: displayKvps,
     content,
-    // contentClasses: [],
+    contentClasses,
     actionButtons,
     log: arguments[0],
   });
