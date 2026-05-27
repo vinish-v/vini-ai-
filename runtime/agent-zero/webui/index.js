@@ -810,6 +810,7 @@ function openViniCanvasWorkspaceFallback() {
   try {
     if (viniWorkspaceStore && typeof viniWorkspaceStore.openCanvas === "function") {
       viniWorkspaceStore.openCanvas();
+      return;
     }
   } catch (error) {
     console.warn("[index] Vini Canvas store open failed:", error);
@@ -827,6 +828,33 @@ function openViniCanvasWorkspaceFallback() {
     canvasWorkspace.style.display = "flex";
     canvasWorkspace.removeAttribute("x-cloak");
   }
+}
+
+function closeViniCanvasWorkspaceFallback() {
+  try {
+    if (viniWorkspaceStore && typeof viniWorkspaceStore.openAgent === "function") {
+      viniWorkspaceStore.openAgent();
+      return;
+    }
+  } catch (error) {
+    console.warn("[index] Vini Canvas store close failed:", error);
+  }
+
+  document.body.classList.remove("vini-canvas-active");
+  const agentWorkspace = document.getElementById("vini-agent-workspace");
+  const agentInput = document.getElementById("vini-agent-input-host");
+  const canvasWorkspace = document.getElementById("vini-canvas-workspace-host");
+  if (agentWorkspace) agentWorkspace.style.removeProperty("display");
+  if (agentInput) agentInput.style.removeProperty("display");
+  if (canvasWorkspace) canvasWorkspace.style.removeProperty("display");
+}
+
+function toggleViniCanvasWorkspaceFallback() {
+  if (viniWorkspaceStore && typeof viniWorkspaceStore.isCanvas === "function" && viniWorkspaceStore.isCanvas()) {
+    closeViniCanvasWorkspaceFallback();
+    return;
+  }
+  openViniCanvasWorkspaceFallback();
 }
 
 // All initializations and event listeners are now consolidated here
@@ -849,7 +877,8 @@ document.addEventListener("DOMContentLoaded", function () {
   document.addEventListener("click", (event) => {
     const canvasButton = event.target?.closest?.("[data-vini-open-canvas]");
     if (!canvasButton) return;
-    openViniCanvasWorkspaceFallback();
+    event.preventDefault();
+    toggleViniCanvasWorkspaceFallback();
   });
 
   // Start polling for updates

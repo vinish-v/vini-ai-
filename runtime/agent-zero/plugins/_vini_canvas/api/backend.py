@@ -226,6 +226,7 @@ def _read_project_context(project_id: str) -> str:
     priority = {
         "package.json",
         "index.html",
+        "server.mjs",
         "vite.config.ts",
         "tsconfig.json",
         "src/main.tsx",
@@ -365,8 +366,17 @@ Rules:
 - Use only real dependencies declared in package.json.
 - Follow the Vini Design Director brief and selected Open Design catalog guidance.
 - Prefer polished, domain-specific UI over generic starter/proof cards.
-- Do not use fake data when the user asks for backend/integration behavior; surface honest UI states instead.
-- Do not claim integrations, reservations, purchases, payments, auth, email delivery, or database writes work unless the generated app includes real working local behavior for them.
+- Build rich, publish-ready experiences when requested: strong section rhythm, domain-specific copy, responsive typography, purposeful motion, and polished interactions.
+- Available frontend libraries include lucide-react, framer-motion, three, @react-three/fiber, and clsx. Use them when they materially improve the result; do not add unused dependencies.
+- For 3D scenes, keep them lightweight, visible, nonblank, responsive, and accessible. Provide a non-3D content fallback when appropriate.
+- Generated projects include a real local Express backend in server.mjs. Use it for working local APIs instead of pretending cloud integrations exist.
+- Local API routes must live under the current Vini preview base automatically. In browser code, call relative paths such as "api/contact", "api/reservations", or "api/health" so the preview proxy routes them correctly.
+- For contact forms, reservations, waitlists, quotes, menu inquiries, bookings, or simple CRUD demos, wire the UI to real server.mjs endpoints with input validation, loading states, success states, and error states.
+- Store only local development data in .vini-data through server.mjs. Do not put .vini-data in generated file responses.
+- If the user asks for payments, auth, email delivery, external databases, maps, SMS, analytics, or deployment, either implement a real configurable integration with honest setup requirements or show a clear setup blocker. Do not fake success.
+- Do not use fake data when the user asks for backend/integration behavior; use real local API behavior where possible and label seed/sample content as editable sample content.
+- Do not claim integrations, reservations, purchases, payments, auth, email delivery, or database writes work unless the generated app includes real working local behavior or a real configured external integration for them.
+- Avoid clipped hero text, generic builder placeholders, repetitive card grids, low-contrast copy, horizontal scroll, broken mobile nav, and oversized headings that only work on one viewport.
 - Do not write outside the project. Do not include node_modules, dist, lockfiles, or binary files."""
     user = f"""User request:
 {prompt}
