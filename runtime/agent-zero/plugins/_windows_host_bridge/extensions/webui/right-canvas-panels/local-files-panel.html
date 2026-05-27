@@ -1,0 +1,11 @@
+<div
+  class="right-canvas-surface-panel local-files-canvas-surface"
+  data-surface-id="local-files"
+  :class="{
+    'is-active': $store.rightCanvas?.isSurfaceVisible('local-files'),
+    'is-mounted': $store.rightCanvas?.isSurfaceRendered('local-files')
+  }"
+  :aria-hidden="(!$store.rightCanvas?.isSurfaceVisible('local-files')).toString()"
+>
+  <x-component path="/plugins/_windows_host_bridge/webui/local-files-panel.html"></x-component>
+</div>

@@ -1,5 +1,5 @@
-import { app, BrowserWindow, dialog } from "electron";
-import { execFile } from "node:child_process";
+import { app, BrowserWindow, dialog, shell } from "electron";
+import { execFile, spawn } from "node:child_process";
 import crypto from "node:crypto";
 import { existsSync } from "node:fs";
 import { promises as fs } from "node:fs";
@@ -8,8 +8,9 @@ import os from "node:os";
 import path from "node:path";
 
 const DEFAULT_PORT = 50180;
-const MAX_BODY_BYTES = 2 * 1024 * 1024;
+const MAX_BODY_BYTES = 96 * 1024 * 1024;
 const MAX_TEXT_READ_BYTES = 1024 * 1024;
+const MAX_BINARY_READ_BYTES = 64 * 1024 * 1024;
 const MAX_COMMAND_OUTPUT_BYTES = 256 * 1024;
 
 type HostBridgeConfig = {
@@ -22,6 +23,7 @@ type HostBridgeConfig = {
     write: boolean;
     delete: boolean;
     mkdir: boolean;
+    open: boolean;
   };
   command: {
     timeoutMs: number;
@@ -148,7 +150,8 @@ export class HostBridge {
         command: true,
         write: true,
         delete: true,
-        mkdir: true
+        mkdir: true,
+        open: true
       },
       command: {
         timeoutMs: 30000,
@@ -233,8 +236,24 @@ export class HostBridge {
       jsonResponse(res, 200, await this.fileRead(body));
       return;
     }
+    if (pathname === "/file/stat" && req.method === "POST") {
+      jsonResponse(res, 200, await this.fileStat(body));
+      return;
+    }
+    if (pathname === "/file/exists" && req.method === "POST") {
+      jsonResponse(res, 200, await this.fileExists(body));
+      return;
+    }
+    if (pathname === "/file/read-binary" && req.method === "POST") {
+      jsonResponse(res, 200, await this.fileReadBinary(body));
+      return;
+    }
     if (pathname === "/file/write" && req.method === "POST") {
       jsonResponse(res, 200, await this.fileWrite(body));
+      return;
+    }
+    if (pathname === "/file/write-binary" && req.method === "POST") {
+      jsonResponse(res, 200, await this.fileWriteBinary(body));
       return;
     }
     if (pathname === "/file/mkdir" && req.method === "POST") {
@@ -247,6 +266,18 @@ export class HostBridge {
     }
     if (pathname === "/command/run" && req.method === "POST") {
       jsonResponse(res, 200, await this.commandRun(body));
+      return;
+    }
+    if (pathname === "/file/open" && req.method === "POST") {
+      jsonResponse(res, 200, await this.fileOpen(body));
+      return;
+    }
+    if (pathname === "/office/status" && req.method === "POST") {
+      jsonResponse(res, 200, await this.officeStatus());
+      return;
+    }
+    if (pathname === "/office/open" && req.method === "POST") {
+      jsonResponse(res, 200, await this.officeOpen(body));
       return;
     }
 
@@ -356,6 +387,55 @@ export class HostBridge {
     return { ok: true, path: target, size: stat.size, modifiedAt: stat.mtime.toISOString(), content };
   }
 
+  private async fileStat(body: Record<string, unknown>): Promise<BridgeResult> {
+    const target = this.resolveScoped(body.path);
+    const stat = await fs.stat(target);
+    return {
+      ok: true,
+      exists: true,
+      path: target,
+      name: path.basename(target),
+      extension: path.extname(target).replace(/^\./, "").toLowerCase(),
+      kind: stat.isDirectory() ? "directory" : "file",
+      size: stat.size,
+      modifiedAt: stat.mtime.toISOString(),
+      createdAt: stat.birthtime.toISOString()
+    };
+  }
+
+  private async fileExists(body: Record<string, unknown>): Promise<BridgeResult> {
+    try {
+      return await this.fileStat(body);
+    } catch (error) {
+      const message = commandError(error);
+      if (message.includes("ENOENT") || message.includes("no such file")) {
+        return { ok: true, exists: false, path: String(body.path || "") };
+      }
+      throw error;
+    }
+  }
+
+  private async fileReadBinary(body: Record<string, unknown>): Promise<BridgeResult> {
+    const target = this.resolveScoped(body.path);
+    const stat = await fs.stat(target);
+    if (!stat.isFile()) {
+      throw new Error("Path is not a file.");
+    }
+    if (stat.size > MAX_BINARY_READ_BYTES) {
+      throw new Error(`File is too large to import through the host bridge (${stat.size} bytes).`);
+    }
+    const contentBase64 = (await fs.readFile(target)).toString("base64");
+    return {
+      ok: true,
+      path: target,
+      name: path.basename(target),
+      extension: path.extname(target).replace(/^\./, "").toLowerCase(),
+      size: stat.size,
+      modifiedAt: stat.mtime.toISOString(),
+      contentBase64
+    };
+  }
+
   private async fileWrite(body: Record<string, unknown>): Promise<BridgeResult> {
     const target = this.resolveScoped(body.path);
     const content = typeof body.content === "string" ? body.content : "";
@@ -371,6 +451,25 @@ export class HostBridge {
     }
     const stat = await fs.stat(target);
     return { ok: true, path: target, size: stat.size, modifiedAt: stat.mtime.toISOString(), mode };
+  }
+
+  private async fileWriteBinary(body: Record<string, unknown>): Promise<BridgeResult> {
+    const target = this.resolveScoped(body.path);
+    const raw = String(body.contentBase64 || "");
+    if (!raw) {
+      throw new Error("contentBase64 is required.");
+    }
+    const data = Buffer.from(raw, "base64");
+    if (data.byteLength > MAX_BINARY_READ_BYTES) {
+      throw new Error(`Binary write exceeds host bridge limit (${data.byteLength} bytes).`);
+    }
+    await this.requireApproval("write", `Write binary file:\n${target}\n\nSize: ${data.byteLength} bytes`);
+    if (body.createDirs !== false) {
+      await fs.mkdir(path.dirname(target), { recursive: true });
+    }
+    await fs.writeFile(target, data);
+    const stat = await fs.stat(target);
+    return { ok: true, path: target, size: stat.size, modifiedAt: stat.mtime.toISOString(), mode: "binary" };
   }
 
   private async fileMkdir(body: Record<string, unknown>): Promise<BridgeResult> {
@@ -423,5 +522,102 @@ export class HostBridge {
       stderr: truncate(result.stderr, maxOutput),
       warning: "Command execution is approval-gated and scoped by cwd, but not OS-sandboxed."
     };
+  }
+
+  private async fileOpen(body: Record<string, unknown>): Promise<BridgeResult> {
+    const target = this.resolveScoped(body.path);
+    await this.requireApproval("open", `Open with the Windows default application:\n${target}`);
+    const error = await shell.openPath(target);
+    if (error) {
+      throw new Error(error);
+    }
+    return { ok: true, path: target, opened: true, app: "default" };
+  }
+
+  private async officeStatus(): Promise<BridgeResult> {
+    const [word, excel, powerpoint] = await Promise.all([
+      this.findOfficeExecutable("WINWORD.EXE"),
+      this.findOfficeExecutable("EXCEL.EXE"),
+      this.findOfficeExecutable("POWERPNT.EXE")
+    ]);
+    return {
+      ok: true,
+      microsoft_office_installed: Boolean(word || excel || powerpoint),
+      apps: {
+        word: { installed: Boolean(word), path: word || "" },
+        excel: { installed: Boolean(excel), path: excel || "" },
+        powerpoint: { installed: Boolean(powerpoint), path: powerpoint || "" }
+      }
+    };
+  }
+
+  private async officeOpen(body: Record<string, unknown>): Promise<BridgeResult> {
+    const target = this.resolveScoped(body.path);
+    const appName = String(body.app || "").trim().toLowerCase();
+    const exeName = appName === "excel"
+      ? "EXCEL.EXE"
+      : appName === "powerpoint" || appName === "ppt" || appName === "pptx"
+        ? "POWERPNT.EXE"
+        : appName === "word" || appName === "doc" || appName === "docx"
+          ? "WINWORD.EXE"
+          : "";
+    if (!exeName) {
+      throw new Error("app must be one of word, excel, or powerpoint.");
+    }
+    const executable = await this.findOfficeExecutable(exeName);
+    if (!executable) {
+      throw new Error(`Microsoft ${appName || exeName} is not installed or not discoverable on this Windows computer.`);
+    }
+    await this.requireApproval("open", `Open in Microsoft Office:\n${target}\n\nApplication:\n${executable}`);
+    const child = spawn(executable, [target], { detached: true, stdio: "ignore", windowsHide: false });
+    await new Promise<void>((resolve, reject) => {
+      child.once("error", reject);
+      child.once("spawn", resolve);
+    });
+    child.unref();
+    return { ok: true, path: target, opened: true, app: appName || exeName, executable };
+  }
+
+  private async findOfficeExecutable(exeName: string): Promise<string> {
+    const normalized = exeName.toUpperCase();
+    try {
+      const found = await this.execSimple("where.exe", [normalized]);
+      const first = found.split(/\r?\n/).map((line) => line.trim()).find(Boolean);
+      if (first) {
+        return first;
+      }
+    } catch {
+      // Registry lookup below covers common Click-to-Run installs.
+    }
+
+    const keys = [
+      `HKCU\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\${normalized}`,
+      `HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\${normalized}`,
+      `HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\App Paths\\${normalized}`
+    ];
+    for (const key of keys) {
+      try {
+        const output = await this.execSimple("reg.exe", ["query", key, "/ve"]);
+        const match = output.match(/REG_SZ\s+(.+)\s*$/im);
+        if (match?.[1]?.trim()) {
+          return match[1].trim().replace(/^"|"$/g, "");
+        }
+      } catch {
+        continue;
+      }
+    }
+    return "";
+  }
+
+  private async execSimple(command: string, args: string[]): Promise<string> {
+    return await new Promise<string>((resolve, reject) => {
+      execFile(command, args, { windowsHide: true, timeout: 8000, maxBuffer: 128 * 1024 }, (error, stdout, stderr) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+        resolve(String(stdout || stderr || ""));
+      });
+    });
   }
 }

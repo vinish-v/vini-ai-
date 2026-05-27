@@ -1,0 +1,82 @@
+<div class="local-files-panel" x-data x-init="$store.localFiles?.init?.()">
+  <style>
+    .local-files-panel { display: flex; flex-direction: column; height: 100%; min-height: 0; padding: 14px; gap: 12px; color: #f6f7fb; background: #07080b; }
+    .local-files-status, .local-files-actions, .local-files-pathbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .local-files-chip { border: 1px solid rgba(255,255,255,.12); border-radius: 999px; padding: 6px 10px; font-size: 12px; color: #c9ced8; background: rgba(255,255,255,.04); }
+    .local-files-chip.is-good { color: #b7f7cc; border-color: rgba(65, 214, 116, .35); }
+    .local-files-chip.is-warn { color: #ffd998; border-color: rgba(255, 196, 87, .35); }
+    .local-files-pathbar select { min-width: 0; flex: 1 1 260px; height: 34px; border-radius: 8px; border: 1px solid rgba(255,255,255,.14); background: #10131a; color: #f6f7fb; padding: 0 10px; }
+    .local-files-button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 34px; border-radius: 8px; border: 1px solid rgba(255,255,255,.14); background: #171b24; color: #f6f7fb; padding: 0 10px; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
+    .local-files-button:hover:not(:disabled) { background: #212634; }
+    .local-files-button:disabled { opacity: .5; cursor: not-allowed; }
+    .local-files-list { flex: 1 1 auto; min-height: 0; overflow: auto; border: 1px solid rgba(255,255,255,.10); border-radius: 10px; background: #0b0d12; }
+    .local-files-row { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; gap: 8px; align-items: center; width: 100%; min-height: 42px; padding: 7px 10px; border: 0; border-bottom: 1px solid rgba(255,255,255,.06); background: transparent; color: inherit; text-align: left; cursor: pointer; }
+    .local-files-row:hover, .local-files-row.is-selected { background: rgba(255,255,255,.07); }
+    .local-files-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 700; }
+    .local-files-meta { color: #8d96a8; font-size: 11px; }
+    .local-files-message { min-height: 18px; color: #aab4c7; font-size: 12px; }
+    .local-files-error { color: #ffb3b3; }
+  </style>
+
+  <div class="local-files-status">
+    <span class="local-files-chip" :class="$store.localFiles?.status?.ok ? 'is-good' : 'is-warn'" x-text="$store.localFiles?.providerState?.() || 'Checking'"></span>
+    <span class="local-files-chip" x-text="`${$store.localFiles?.scopePaths?.().length || 0} scoped folders`"></span>
+    <span class="local-files-chip" :class="$store.localFiles?.officeInstalled?.() ? 'is-good' : 'is-warn'" x-text="$store.localFiles?.officeInstalled?.() ? 'Microsoft Office detected' : 'Native Office not detected'"></span>
+  </div>
+
+  <div class="local-files-pathbar">
+    <select x-model="$store.localFiles.currentPath" @change="$store.localFiles.list($event.target.value)">
+      <template x-for="scope in $store.localFiles.scopePaths()" :key="scope">
+        <option :value="scope" x-text="scope"></option>
+      </template>
+    </select>
+    <button type="button" class="local-files-button" @click="$store.localFiles.refreshStatus()" :disabled="$store.localFiles.loading">
+      <span class="material-symbols-outlined" aria-hidden="true">refresh</span>
+      <span>Refresh</span>
+    </button>
+  </div>
+
+  <div class="local-files-list" role="listbox" aria-label="Scoped Windows files">
+    <template x-for="entry in $store.localFiles.entries" :key="entry.path">
+      <button
+        type="button"
+        class="local-files-row"
+        :class="{ 'is-selected': $store.localFiles.selected?.path === entry.path }"
+        @click="$store.localFiles.selected = entry"
+        @dblclick="$store.localFiles.openEntry(entry)"
+      >
+        <span class="material-symbols-outlined" aria-hidden="true" x-text="entry.kind === 'directory' ? 'folder' : 'draft'"></span>
+        <span>
+          <span class="local-files-name" x-text="entry.name"></span>
+          <span class="local-files-meta" x-text="entry.path"></span>
+        </span>
+        <span class="local-files-meta" x-text="entry.kind === 'directory' ? 'Folder' : `${entry.size || 0} B`"></span>
+      </button>
+    </template>
+  </div>
+
+  <div class="local-files-actions">
+    <button type="button" class="local-files-button" @click="$store.localFiles.openEntry()" :disabled="!$store.localFiles.selected || $store.localFiles.loading">
+      <span class="material-symbols-outlined" aria-hidden="true">open_in_new</span>
+      <span>Open</span>
+    </button>
+    <button type="button" class="local-files-button" @click="$store.localFiles.importSelected(false)" :disabled="!$store.localFiles.selected || $store.localFiles.selected.kind === 'directory' || $store.localFiles.loading">
+      <span class="material-symbols-outlined" aria-hidden="true">download</span>
+      <span>Import</span>
+    </button>
+    <button type="button" class="local-files-button" @click="$store.localFiles.importSelected(true)" :disabled="!$store.localFiles.selected || $store.localFiles.selected.kind === 'directory' || $store.localFiles.loading">
+      <span class="material-symbols-outlined" aria-hidden="true">desktop_windows</span>
+      <span>Import + Desktop</span>
+    </button>
+    <button type="button" class="local-files-button" @click="$store.localFiles.openDefaultApp()" :disabled="!$store.localFiles.selected || $store.localFiles.selected.kind === 'directory' || $store.localFiles.loading">
+      <span class="material-symbols-outlined" aria-hidden="true">open_in_browser</span>
+      <span>Windows App</span>
+    </button>
+    <button type="button" class="local-files-button" @click="$store.localFiles.openNativeOffice()" :disabled="!$store.localFiles.selected || $store.localFiles.selected.kind === 'directory' || !$store.localFiles.officeInstalled() || $store.localFiles.loading">
+      <span class="material-symbols-outlined" aria-hidden="true">table_view</span>
+      <span>MS Office</span>
+    </button>
+  </div>
+
+  <div class="local-files-message" :class="{ 'local-files-error': $store.localFiles.error }" x-text="$store.localFiles.error || $store.localFiles.message || 'Host writes and app launches require Windows approval.'"></div>
+</div>
