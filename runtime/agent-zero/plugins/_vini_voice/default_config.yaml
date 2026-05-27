@@ -5,7 +5,7 @@ max_utterance_ms: 7000
 pre_roll_ms: 120
 
 voice_stt:
-  engine: whisper
+  engine: moonshine
   model_size: tiny
   language: en
   message_mode: send
