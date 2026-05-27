@@ -352,18 +352,37 @@ def _google_workspace_mcp_status(manifest: ConnectorManifest) -> dict[str, Any] 
     )
     tools = _mcp_tools_for_names(matched_names, runtime.get("tools", []))
     service_tools = _filter_google_workspace_tools(manifest.id, tools)
+    credential_users = _google_workspace_credential_users(servers)
     errors = [item for item in runtime_matches if item.get("error")]
     if service_tools:
+        if not credential_users:
+            return _base_status(
+                manifest,
+                "configured",
+                "OAuth sign-in needed",
+                (
+                    f"{manifest.name} MCP tools are available, but no Google account OAuth token is stored yet. "
+                    "Run a Google Workspace tool with user_google_email and complete the Google consent flow."
+                ),
+                details={
+                    "mcp_preset": "google-workspace",
+                    "matching_servers": matched_names,
+                    "mcp_tools": service_tools,
+                    "google_credentials": {"stored_users": [], "count": 0},
+                    **runtime,
+                },
+            )
         return _base_status(
             manifest,
             "verified",
             "Ready for agent",
-            f"{manifest.name} is ready through the Google Workspace MCP server with {len(service_tools)} matching tool(s).",
+            f"{manifest.name} is ready through the Google Workspace MCP server with {len(service_tools)} matching tool(s) and stored Google OAuth credentials.",
             verified=True,
             details={
                 "mcp_preset": "google-workspace",
                 "matching_servers": matched_names,
                 "mcp_tools": service_tools,
+                "google_credentials": {"stored_users": credential_users, "count": len(credential_users)},
                 **runtime,
             },
         )
@@ -879,6 +898,34 @@ def _filter_google_workspace_tools(connector_id: str, tools: list[dict[str, Any]
         ):
             result.append(tool)
     return result
+
+
+def _google_workspace_credential_users(servers: dict[str, Any]) -> list[str]:
+    credential_dirs = []
+    for name, config in servers.items():
+        if not _google_workspace_name_matches(str(name)) or not isinstance(config, dict):
+            continue
+        env = config.get("env") if isinstance(config.get("env"), dict) else {}
+        if env.get("WORKSPACE_MCP_CREDENTIALS_DIR"):
+            credential_dirs.append(str(env["WORKSPACE_MCP_CREDENTIALS_DIR"]))
+        if env.get("GOOGLE_MCP_CREDENTIALS_DIR"):
+            credential_dirs.append(str(env["GOOGLE_MCP_CREDENTIALS_DIR"]))
+    credential_dirs.append("/a0/usr/google_workspace_mcp/credentials")
+
+    users: set[str] = set()
+    for raw_dir in credential_dirs:
+        try:
+            directory = Path(raw_dir).expanduser()
+            if not directory.exists() or not directory.is_dir():
+                continue
+            for item in directory.glob("*.json"):
+                user = item.stem
+                if user in {"oauth_states"} or "@" not in user:
+                    continue
+                users.add(user)
+        except Exception:
+            continue
+    return sorted(users)
 
 
 def _resolve_mcp_tool_name(manifest: ConnectorManifest, tool_name: str) -> str:
