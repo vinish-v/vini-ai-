@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import re
 import shutil
+import signal
 import subprocess
 import time
 import urllib.error
@@ -203,10 +205,85 @@ def _is_git_repo(project_id: str) -> bool:
     return (builder._project_dir(project_id) / ".git").exists()
 
 
+def _listening_pids_on_port(port: int) -> set[int]:
+    if port <= 0 or not Path("/proc/net/tcp").exists():
+        return set()
+
+    port_hex = f"{port:04X}"
+    inodes: set[str] = set()
+    for table in (Path("/proc/net/tcp"), Path("/proc/net/tcp6")):
+        if not table.exists():
+            continue
+        try:
+            lines = table.read_text(encoding="utf-8", errors="replace").splitlines()[1:]
+        except Exception:
+            continue
+        for line in lines:
+            parts = line.split()
+            if len(parts) < 10:
+                continue
+            local_address, state, inode = parts[1], parts[3], parts[9]
+            if state == "0A" and local_address.rsplit(":", 1)[-1].upper() == port_hex:
+                inodes.add(inode)
+
+    pids: set[int] = set()
+    for proc_dir in Path("/proc").iterdir():
+        if not proc_dir.name.isdigit():
+            continue
+        fd_dir = proc_dir / "fd"
+        if not fd_dir.exists():
+            continue
+        for fd_path in fd_dir.iterdir():
+            try:
+                target = os.readlink(fd_path)
+            except Exception:
+                continue
+            if target.startswith("socket:[") and target[8:-1] in inodes:
+                pids.add(int(proc_dir.name))
+                break
+    return pids
+
+
+def _kill_preview_port(project_id: str) -> list[int]:
+    try:
+        manifest = builder._load_manifest(project_id)
+        port = int(manifest.get("preview_port") or 0)
+    except Exception:
+        return []
+    if port <= 0:
+        return []
+    killed: list[int] = []
+    for pid in _listening_pids_on_port(port):
+        if pid == os.getpid():
+            continue
+        try:
+            os.kill(pid, signal.SIGTERM)
+            killed.append(pid)
+        except ProcessLookupError:
+            continue
+        except Exception:
+            continue
+    if killed:
+        time.sleep(0.5)
+    for pid in list(killed):
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            continue
+        except Exception:
+            continue
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except Exception:
+            pass
+    return killed
+
+
 def _stop_preview(project_id: str) -> dict[str, Any]:
     process = builder.PREVIEW_PROCESSES.pop(project_id, None)
+    killed_pids = _kill_preview_port(project_id)
     if process is None:
-        return {"ok": True, "stopped": False}
+        return {"ok": True, "stopped": bool(killed_pids), "killed_pids": killed_pids}
     if process.poll() is None:
         process.terminate()
         try:
@@ -214,7 +291,7 @@ def _stop_preview(project_id: str) -> dict[str, Any]:
         except Exception:
             process.kill()
             process.wait(timeout=8)
-    return {"ok": True, "stopped": True, "exit_code": process.poll()}
+    return {"ok": True, "stopped": True, "exit_code": process.poll(), "killed_pids": killed_pids}
 
 
 def _read_project_context(project_id: str) -> str:
