@@ -16,8 +16,12 @@ from typing import Any
 from helpers.api import ApiHandler, Request, Response
 from helpers import files
 from plugins._vini_app_builder.helpers import builder
-from plugins._vini_canvas.helpers import open_design_catalog
 from plugins._model_config.helpers import model_config
+
+try:
+    from plugins._vini_canvas.helpers import open_design_catalog
+except ModuleNotFoundError:
+    from usr.plugins._vini_canvas.helpers import open_design_catalog
 
 
 DATA_DIR = Path(files.get_abs_path(files.USER_DIR, "canvas", "data"))
@@ -401,6 +405,323 @@ def _fetch_preview_text(url: str) -> tuple[bool, str, str]:
         return False, "", str(exc)
 
 
+def _safe_run_label() -> str:
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    return f"qa-{stamp}-{int(time.time() * 1000) % 100000}"
+
+
+def _command_output(result: subprocess.CompletedProcess[str]) -> str:
+    return "\n".join(part for part in [result.stdout, result.stderr] if part).strip()
+
+
+def _run_playwright_screenshot_qa(*, project_id: str, url: str, prompt: str) -> dict[str, Any]:
+    project_dir = builder._project_dir(project_id)
+    run_name = _safe_run_label()
+    qa_root = project_dir / "vini-qa" / run_name
+    tools_root = project_dir / ".vini-qa-tools"
+    qa_root.mkdir(parents=True, exist_ok=True)
+    tools_root.mkdir(parents=True, exist_ok=True)
+    config_path = qa_root / "playwright-qa-config.json"
+    script_path = tools_root / "playwright-qa-runner.mjs"
+    result_path = qa_root / "playwright-qa-result.json"
+
+    config_path.write_text(
+        json.dumps(
+            {
+                "url": url,
+                "prompt": prompt,
+                "outDir": str(qa_root),
+                "resultPath": str(result_path),
+                "viewports": [
+                    {"name": "desktop", "width": 1440, "height": 1000},
+                    {"name": "mobile", "width": 390, "height": 844},
+                ],
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    script_path.write_text(
+        r"""
+import fs from "node:fs";
+import { chromium } from "playwright";
+
+const config = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+const checks = [];
+const screenshots = [];
+const pages = [];
+
+function addCheck(name, ok, detail = {}) {
+  checks.push({ name, ok: Boolean(ok), detail });
+}
+
+const browser = await chromium.launch({ headless: true });
+try {
+  for (const viewport of config.viewports) {
+    const page = await browser.newPage({
+      viewport: { width: viewport.width, height: viewport.height },
+      deviceScaleFactor: viewport.name === "mobile" ? 2 : 1,
+      isMobile: viewport.name === "mobile",
+    });
+    const consoleMessages = [];
+    const pageErrors = [];
+    page.on("console", (msg) => {
+      if (["error", "warning"].includes(msg.type())) {
+        consoleMessages.push(`${msg.type()}: ${msg.text()}`);
+      }
+    });
+    page.on("pageerror", (error) => pageErrors.push(String(error?.message || error)));
+
+    let response = null;
+    try {
+      response = await page.goto(config.url, { waitUntil: "networkidle", timeout: 45000 });
+      await page.waitForTimeout(750);
+    } catch (error) {
+      addCheck(`${viewport.name}:http-success`, false, { error: String(error?.message || error) });
+      await page.close();
+      continue;
+    }
+
+    const status = response ? response.status() : 0;
+    addCheck(`${viewport.name}:http-success`, status >= 200 && status < 400, { status });
+
+    const screenshotPath = `${config.outDir}/${viewport.name}.png`;
+    await page.screenshot({ path: screenshotPath, fullPage: true });
+    screenshots.push(screenshotPath);
+
+    const metrics = await page.evaluate(() => {
+      const visibleElements = Array.from(document.querySelectorAll("body *")).filter((el) => {
+        const style = window.getComputedStyle(el);
+        const box = el.getBoundingClientRect();
+        return style.visibility !== "hidden" && style.display !== "none" && box.width > 1 && box.height > 1;
+      });
+      const clipped = [];
+      const overlaps = [];
+      const oversizedText = [];
+      const brokenImages = Array.from(document.images)
+        .filter((img) => !img.complete || img.naturalWidth === 0)
+        .slice(0, 10)
+        .map((img) => img.currentSrc || img.src || img.alt || "image");
+
+      for (const el of visibleElements) {
+        const style = window.getComputedStyle(el);
+        const text = (el.innerText || el.textContent || "").trim().replace(/\s+/g, " ");
+        if (!text) continue;
+        const box = el.getBoundingClientRect();
+        const clipsWidth = el.scrollWidth > el.clientWidth + 2;
+        const clipsHeight = el.scrollHeight > el.clientHeight + 2;
+        if ((clipsWidth || clipsHeight) && style.overflow !== "visible" && style.whiteSpace !== "normal") {
+          clipped.push({ text: text.slice(0, 90), width: Math.round(box.width), height: Math.round(box.height) });
+        }
+        const fontSize = Number.parseFloat(style.fontSize || "0");
+        if (fontSize > 84 && box.width > window.innerWidth * 0.86) {
+          oversizedText.push({ text: text.slice(0, 90), fontSize, width: Math.round(box.width) });
+        }
+      }
+
+      const fixedLike = visibleElements.filter((el) => {
+        const position = window.getComputedStyle(el).position;
+        return position === "fixed" || position === "sticky";
+      }).slice(0, 20);
+      for (const a of fixedLike) {
+        const aBox = a.getBoundingClientRect();
+        if (aBox.width <= 1 || aBox.height <= 1) continue;
+        for (const b of visibleElements.slice(0, 160)) {
+          if (a === b || a.contains(b) || b.contains(a)) continue;
+          const bBox = b.getBoundingClientRect();
+          const intersects = aBox.left < bBox.right && aBox.right > bBox.left && aBox.top < bBox.bottom && aBox.bottom > bBox.top;
+          if (intersects) {
+            overlaps.push({
+              fixedText: (a.innerText || a.textContent || a.tagName || "").trim().slice(0, 70),
+              targetText: (b.innerText || b.textContent || b.tagName || "").trim().slice(0, 70),
+            });
+            break;
+          }
+        }
+      }
+
+      const bodyText = (document.body?.innerText || "").trim().replace(/\s+/g, " ");
+      return {
+        title: document.title,
+        bodyTextLength: bodyText.length,
+        bodyTextSample: bodyText.slice(0, 500),
+        visibleElementCount: visibleElements.length,
+        documentWidth: document.documentElement.scrollWidth,
+        viewportWidth: window.innerWidth,
+        hasHorizontalScroll: document.documentElement.scrollWidth > window.innerWidth + 4,
+        clipped: clipped.slice(0, 12),
+        overlaps: overlaps.slice(0, 12),
+        oversizedText: oversizedText.slice(0, 12),
+        brokenImages,
+      };
+    });
+
+    pages.push({ viewport, metrics, consoleMessages: consoleMessages.slice(0, 20), pageErrors: pageErrors.slice(0, 20) });
+    addCheck(`${viewport.name}:not-blank`, metrics.bodyTextLength >= 120 && metrics.visibleElementCount >= 8, {
+      bodyTextLength: metrics.bodyTextLength,
+      visibleElementCount: metrics.visibleElementCount,
+    });
+    addCheck(`${viewport.name}:no-horizontal-scroll`, !metrics.hasHorizontalScroll, {
+      documentWidth: metrics.documentWidth,
+      viewportWidth: metrics.viewportWidth,
+    });
+    addCheck(`${viewport.name}:no-clipped-text`, metrics.clipped.length === 0, metrics.clipped);
+    addCheck(`${viewport.name}:no-fixed-overlap`, metrics.overlaps.length === 0, metrics.overlaps);
+    addCheck(`${viewport.name}:no-oversized-hero-text`, metrics.oversizedText.length === 0, metrics.oversizedText);
+    addCheck(`${viewport.name}:no-broken-images`, metrics.brokenImages.length === 0, metrics.brokenImages);
+    addCheck(`${viewport.name}:console-clean`, consoleMessages.length === 0 && pageErrors.length === 0, {
+      consoleMessages: consoleMessages.slice(0, 10),
+      pageErrors: pageErrors.slice(0, 10),
+    });
+    await page.close();
+  }
+} finally {
+  await browser.close();
+}
+
+const result = {
+  ok: checks.every((check) => check.ok),
+  checks,
+  screenshots,
+  pages,
+  finishedAt: new Date().toISOString(),
+};
+fs.writeFileSync(config.resultPath, JSON.stringify(result, null, 2));
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    node = shutil.which("node") or shutil.which("node.exe")
+    npm = shutil.which("npm") or shutil.which("npm.cmd")
+    if not node or not npm:
+        return {
+            "ok": False,
+            "method": "playwright-screenshot-qa",
+            "out_dir": str(qa_root),
+            "screenshots": [],
+            "screenshot_urls": [],
+            "checks": [{"name": "playwright-tooling", "ok": False, "detail": "node/npm are not available in the runtime."}],
+            "commands": [],
+        }
+
+    install_package_command = [npm, "install", "--no-audit", "--no-fund", "--prefix", str(tools_root), "playwright"]
+    run_command = [node, str(script_path), str(config_path)]
+    commands: list[dict[str, Any]] = []
+
+    def run_once(command: list[str], timeout: int, cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
+        started = time.time()
+        result = subprocess.run(command, cwd=str(cwd or project_dir), capture_output=True, text=True, timeout=timeout)
+        commands.append(
+            {
+                "command": command,
+                "code": result.returncode,
+                "stdout": result.stdout[-8000:],
+                "stderr": result.stderr[-8000:],
+                "duration_seconds": round(time.time() - started, 2),
+            }
+        )
+        return result
+
+    try:
+        if not (tools_root / "node_modules" / "playwright").exists():
+            package_result = run_once(install_package_command, 180, tools_root)
+            if package_result.returncode != 0:
+                return {
+                    "ok": False,
+                    "method": "playwright-screenshot-qa",
+                    "out_dir": str(qa_root),
+                    "screenshots": [],
+                    "screenshot_urls": [],
+                    "checks": [
+                        {
+                            "name": "playwright-tooling",
+                            "ok": False,
+                            "detail": _command_output(package_result)[-4000:] or "Failed to install Playwright in the project QA tools folder.",
+                        }
+                    ],
+                    "commands": commands,
+                }
+
+        result = run_once(run_command, 180, tools_root)
+        output = _command_output(result).lower()
+        if result.returncode != 0 and (
+            "executable doesn't exist" in output
+            or "please run the following command" in output
+            or "browser was not found" in output
+        ):
+            playwright_bin = shutil.which("playwright", path=str(tools_root / "node_modules" / ".bin"))
+            if not playwright_bin:
+                return {
+                    "ok": False,
+                    "method": "playwright-screenshot-qa",
+                    "out_dir": str(qa_root),
+                    "screenshots": [],
+                    "screenshot_urls": [],
+                    "checks": [{"name": "playwright-tooling", "ok": False, "detail": "Local Playwright binary was not found after install."}],
+                    "commands": commands,
+                }
+            install_command = [playwright_bin, "install", "--with-deps", "chromium"]
+            install_result = run_once(install_command, 420, tools_root)
+            if install_result.returncode == 0:
+                result = run_once(run_command, 180, tools_root)
+        if result.returncode != 0:
+            return {
+                "ok": False,
+                "method": "playwright-screenshot-qa",
+                "out_dir": str(qa_root),
+                "screenshots": [],
+                "screenshot_urls": [],
+                "checks": [
+                    {
+                        "name": "playwright-run",
+                        "ok": False,
+                        "detail": _command_output(result)[-4000:] or f"Playwright exited with {result.returncode}.",
+                    }
+                ],
+                "commands": commands,
+            }
+    except subprocess.TimeoutExpired as exc:
+        commands.append({"command": run_command, "code": None, "stdout": exc.stdout or "", "stderr": exc.stderr or "", "duration_seconds": None})
+        return {
+            "ok": False,
+            "method": "playwright-screenshot-qa",
+            "out_dir": str(qa_root),
+            "screenshots": [],
+            "screenshot_urls": [],
+            "checks": [{"name": "playwright-timeout", "ok": False, "detail": "Playwright screenshot QA timed out."}],
+            "commands": commands,
+        }
+
+    if not result_path.exists():
+        return {
+            "ok": False,
+            "method": "playwright-screenshot-qa",
+            "out_dir": str(qa_root),
+            "screenshots": [],
+            "screenshot_urls": [],
+            "checks": [{"name": "playwright-result", "ok": False, "detail": "Playwright did not write a result file."}],
+            "commands": commands,
+        }
+
+    payload = json.loads(result_path.read_text(encoding="utf-8"))
+    screenshots = [str(path) for path in payload.get("screenshots") or []]
+    screenshot_urls = [
+        f"/vini-builder/qa/{project_id}/{run_name}/{Path(path).name}"
+        for path in screenshots
+    ]
+    payload.update(
+        {
+            "method": "playwright-screenshot-qa",
+            "out_dir": str(qa_root),
+            "screenshots": screenshots,
+            "screenshot_urls": screenshot_urls,
+            "commands": commands,
+        }
+    )
+    return payload
+
+
 def _run_visual_qa(
     *,
     app: dict[str, Any],
@@ -412,15 +733,16 @@ def _run_visual_qa(
     checks: list[dict[str, Any]] = []
     qa = {
         "ok": False,
-        "method": "http-static-preview-qa",
+        "method": "http-static-plus-playwright-screenshot-qa",
         "started_at": _now(),
         "finished_at": None,
         "checks": checks,
         "preview_url": (preview_result or {}).get("preview_url"),
         "internal_preview_url": (preview_result or {}).get("internal_preview_url"),
-        "notes": [
-            "This is a real local preview HTTP/static QA pass. Browser/Playwright screenshot QA can be layered on top from the desktop shell.",
-        ],
+        "screenshots": [],
+        "screenshot_urls": [],
+        "playwright": None,
+        "notes": ["This is a real local preview QA pass with static HTTP checks and Playwright desktop/mobile screenshots."],
     }
 
     if not preview_result or not preview_result.get("ok"):
@@ -495,6 +817,26 @@ def _run_visual_qa(
             "detail": "Expected CSS guards such as overflow-wrap, word-break, clamp(), or overflow-x control.",
         }
     )
+
+    playwright_result = _run_playwright_screenshot_qa(project_id=project_id, url=url, prompt=prompt)
+    qa["playwright"] = {
+        "ok": playwright_result.get("ok"),
+        "method": playwright_result.get("method"),
+        "out_dir": playwright_result.get("out_dir"),
+        "commands": playwright_result.get("commands") or [],
+        "pages": playwright_result.get("pages") or [],
+    }
+    qa["screenshots"] = playwright_result.get("screenshots") or []
+    qa["screenshot_urls"] = playwright_result.get("screenshot_urls") or []
+    for check in playwright_result.get("checks") or []:
+        if isinstance(check, dict):
+            checks.append(
+                {
+                    "name": f"playwright:{check.get('name') or 'check'}",
+                    "ok": bool(check.get("ok")),
+                    "detail": check.get("detail"),
+                }
+            )
 
     qa["ok"] = all(bool(check.get("ok")) for check in checks)
     qa["finished_at"] = _now()
@@ -587,6 +929,13 @@ def _dyad_write_message(
             + escape(json.dumps(visual_qa.get("checks") or [], indent=2)[:5000], quote=False)
             + "\n</dyad-status>"
         )
+        screenshot_urls = visual_qa.get("screenshot_urls") or []
+        if screenshot_urls:
+            parts.append(
+                "<dyad-status>Screenshot QA artifacts:\n"
+                + escape(json.dumps(screenshot_urls, indent=2), quote=False)
+                + "\n</dyad-status>"
+            )
         if visual_qa.get("ok"):
             parts.append("<dyad-status>Ready with proof</dyad-status>")
         else:
