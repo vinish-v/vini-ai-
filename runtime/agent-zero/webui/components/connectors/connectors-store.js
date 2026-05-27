@@ -613,9 +613,9 @@ const CONNECTORS = [
     type: "api-key",
     authUrl: "https://www.firecrawl.dev/app/api-keys",
     envKeys: ["FIRECRAWL_API_KEY"],
-    description: "Unlock web scraping, crawling, and search capabilities.",
-    requirements: ["Firecrawl API key"],
-    prompts: ["Crawl this site and summarize key pages.", "Extract structured data from this URL."],
+    description: "Use Firecrawl v2 for fast web search, scrape, crawl, map, batch scrape, and action-based page extraction.",
+    requirements: ["Firecrawl API key", "Optional FIRECRAWL_API_URL or FIRECRAWL_BASE_URL for self-hosted Firecrawl"],
+    prompts: ["Search the web with Firecrawl and cite source URLs.", "Crawl this site and summarize key pages.", "Extract structured data from this URL."],
   },
   {
     id: "jotform",
@@ -973,6 +973,8 @@ const CONNECTOR_ICON_DOMAINS = {
   "pop-hive": "pophive.org",
 };
 
+const MCP_PRESET_CONNECTORS = new Set(["gmail", "google-drive", "google-calendar"]);
+
 function normalizeQuery(value) {
   return String(value || "").trim().toLowerCase();
 }
@@ -1101,6 +1103,7 @@ const model = {
     const status = this.connectorBackendStatus(connector);
     if (status?.status === "verified") return "check";
     if (status?.status === "configured") return "vpn_key";
+    if (this.hasMcpPreset(connector)) return "settings_ethernet";
     if (connector.type === "plugin") return "tune";
     if (connector.type === "built-in") return "open_in_new";
     if (connector.type === "mcp") return "settings_ethernet";
@@ -1112,6 +1115,11 @@ const model = {
     if (!connector) return "Connect";
     if (connector.type === "plugin") return "Open setup";
     if (connector.type === "built-in") return "Open";
+    if (this.hasMcpPreset(connector)) {
+      const status = this.connectorBackendStatus(connector);
+      if (status?.status === "verified" || status?.status === "configured") return "Refresh Workspace MCP";
+      return "Enable Workspace MCP";
+    }
     if (connector.type === "mcp") {
       const status = this.connectorBackendStatus(connector);
       if (status?.status === "verified" || status?.status === "configured") return "Refresh MCP";
@@ -1166,6 +1174,10 @@ const model = {
     return this.connectorStatuses?.[connector.id] || null;
   },
 
+  hasMcpPreset(connector) {
+    return MCP_PRESET_CONNECTORS.has(connector?.id);
+  },
+
   selectConnector(connector) {
     if (!connector?.id) return;
     this.selectedId = connector.id;
@@ -1183,6 +1195,10 @@ const model = {
     }
     if (connector.surfaceId) {
       await this.openSurface(connector.surfaceId);
+      return;
+    }
+    if (this.hasMcpPreset(connector)) {
+      await this.enableMcpConnector(connector);
       return;
     }
     if (connector.type === "mcp") {
