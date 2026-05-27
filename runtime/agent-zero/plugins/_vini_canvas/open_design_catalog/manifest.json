@@ -1,0 +1,9 @@
+﻿{
+    "source":  "https://github.com/nexu-io/open-design",
+    "commit":  "33f2ee58a81fc1131f24c307ce9975f3c00f45da",
+    "imported_at":  "2026-05-27T08:47:12.9850237Z",
+    "license":  "Apache-2.0",
+    "use_policy":  "Read-only design and workflow guidance for Vini Canvas. Catalog entries are not executable trusted code.",
+    "skills_count":  133,
+    "design_systems_count":  150
+}

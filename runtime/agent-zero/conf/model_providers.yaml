@@ -47,6 +47,13 @@ chat:
     litellm_provider: cometapi
     models_list:
       endpoint_url: "https://api.cometapi.com/v1/models"
+  cerebras:
+    name: Cerebras
+    litellm_provider: cerebras
+    models_list:
+      endpoint_url: "https://api.cerebras.ai/v1/models"
+    kwargs:
+      api_base: https://api.cerebras.ai/v1
   deepseek:
     name: DeepSeek
     litellm_provider: deepseek

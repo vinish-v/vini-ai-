@@ -18,7 +18,20 @@ const FRAME_SAMPLES = 320;
 const FAST_TTS_CHUNK_LENGTH = 64;
 const RESPONSE_TARGET_MS = 2000;
 const RESPONSE_TIMEOUT_MS = 45000;
+const DUPLICATE_TRANSCRIPT_WINDOW_MS = 8000;
 const VOICE_HANDLER = "plugins/_vini_voice/ws_voice";
+const BACKCHANNEL_TRANSCRIPTS = new Set([
+  "yeah",
+  "yes",
+  "yep",
+  "ok",
+  "okay",
+  "right",
+  "hmm",
+  "hm",
+  "uh huh",
+  "mm hmm",
+]);
 
 const voiceSocket = getNamespacedClient("/ws");
 voiceSocket.addHandlers([VOICE_HANDLER]);
@@ -87,6 +100,10 @@ const model = {
   responseWaitTimer: null,
   responseTargetTimer: null,
   isStreamingAudio: false,
+  lastSubmittedTranscript: "",
+  lastSubmittedAt: 0,
+  suppressedTranscriptCount: 0,
+  ttsProviderReadyPromise: null,
 
   async init() {
     if (!this.logsListener) {
@@ -117,6 +134,8 @@ const model = {
       };
       await voiceSocket.on("vini_voice_event", this.voiceEventListener);
     }
+
+    void this.ensureTtsProvider();
   },
 
   async open() {
@@ -145,6 +164,7 @@ const model = {
     try {
       globalThis.Alpine?.store?.("whisperStt")?.stop?.();
       await voiceSocket.connect();
+      await this.ensureTtsProvider();
       const startResponse = await voiceSocket.request("vini_voice_start", {}, { timeoutMs: 60000 });
       const startError = firstError(startResponse);
       if (startError) throw new Error(startError);
@@ -208,6 +228,12 @@ const model = {
     event.outputBuffer.getChannelData(0).fill(0);
     const rms = this.calculateRms(input);
     this.audioLevel = Math.max(0, Math.min(1, rms * 8));
+
+    if (this.shouldPauseSttStream()) {
+      this.resampleRemainder = new Float32Array(0);
+      this.pcmRemainder = new Int16Array(0);
+      return;
+    }
 
     const downsampled = this.downsampleToTarget(input, this.audioContext.sampleRate);
     if (!downsampled.length) return;
@@ -329,6 +355,35 @@ const model = {
   },
 
   async sendTranscript(text) {
+    const normalized = this.normalizeTranscript(text);
+    const now = Date.now();
+    const isDuplicate =
+      normalized &&
+      normalized === this.lastSubmittedTranscript &&
+      now - this.lastSubmittedAt < DUPLICATE_TRANSCRIPT_WINDOW_MS;
+    const isBackchannel = BACKCHANNEL_TRANSCRIPTS.has(normalized);
+
+    if (!normalized || isDuplicate) {
+      this.suppressedTranscriptCount += 1;
+      this.resumeListeningIfReady();
+      return;
+    }
+
+    if (this.awaitingAgentResponse || this.isAgentBusy()) {
+      this.suppressedTranscriptCount += 1;
+      console.info("[vini_voice] suppressed transcript while agent is busy", {
+        text,
+        normalized,
+        isBackchannel,
+        count: this.suppressedTranscriptCount,
+      });
+      this.vadLabel = isBackchannel ? "Waiting for Vini AI" : "Hold on";
+      this.resumeListeningIfReady();
+      return;
+    }
+
+    this.lastSubmittedTranscript = normalized;
+    this.lastSubmittedAt = now;
     this.userText = text;
     this.status = Status.THINKING;
     this.vadLabel = "Sending to Vini AI";
@@ -354,7 +409,7 @@ const model = {
       const log = logs[index];
       if (log?.type !== "response" || !String(log.content || "").trim()) continue;
 
-      const cleanText = this.stripText(log.content);
+      const cleanText = this.stripText(this.extractVoiceResponseText(log.content));
       if (!this.isSpeakableResponse(cleanText)) return;
       const responseId = `voice-${log.no}`;
       if (this.interruptedVoiceResponseId === responseId) return;
@@ -373,11 +428,25 @@ const model = {
       clearTimeout(this.responseTargetTimer);
       this.responseWaitTimer = null;
       this.responseTargetTimer = null;
-      void ttsService.speakStream(responseId, speakableText, finished, {
-        allowPartial: true,
-        fast: true,
-        maxChunkLength: FAST_TTS_CHUNK_LENGTH,
-      }).finally(() => this.resumeListeningIfReady());
+      console.info("[vini_voice] speaking response", {
+        responseId,
+        finished,
+        length: speakableText.length,
+        providerReady: ttsService.hasProvider(),
+      });
+      void this.ensureTtsProvider()
+        .then(() =>
+          ttsService.speakStream(responseId, speakableText, finished, {
+            allowPartial: true,
+            fast: true,
+            maxChunkLength: FAST_TTS_CHUNK_LENGTH,
+          }),
+        )
+        .catch((error) => {
+          console.error("[vini_voice] TTS playback failed", error);
+          this.error = error instanceof Error ? error.message : String(error);
+        })
+        .finally(() => this.resumeListeningIfReady());
       return;
     }
   },
@@ -419,14 +488,81 @@ const model = {
 
   isAgentBusy() {
     const chatsStore = globalThis.Alpine?.store?.("chats");
-    return !!chatsStore?.selectedContext?.running;
+    const messageQueueStore = globalThis.Alpine?.store?.("messageQueue");
+    return !!chatsStore?.selectedContext?.running || !!messageQueueStore?.hasQueue;
+  },
+
+  shouldPauseSttStream() {
+    if (this.status === Status.RECORDING) return false;
+    if (ttsService.isSpeaking() || this.status === Status.SPEAKING) return false;
+    return this.awaitingAgentResponse || this.isAgentBusy();
+  },
+
+  ensureTtsProvider() {
+    if (ttsService.hasProvider()) return Promise.resolve();
+    if (this.ttsProviderReadyPromise) return this.ttsProviderReadyPromise;
+
+    this.ttsProviderReadyPromise = import("/plugins/_kokoro_tts/webui/kokoro-tts-store.js")
+      .then((module) => module?.store?.initRuntime?.())
+      .catch((error) => {
+        console.warn("[vini_voice] TTS provider init failed", error);
+      })
+      .finally(() => {
+        this.ttsProviderReadyPromise = null;
+      });
+
+    return this.ttsProviderReadyPromise;
+  },
+
+  normalizeTranscript(value) {
+    return String(value || "")
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}\s]/gu, " ")
+      .replace(/\s+/g, " ")
+      .trim();
   },
 
   isSpeakableResponse(value) {
     const text = String(value || "").trim();
     if (!text) return false;
-    if (text.startsWith("{") || text.startsWith("[") || text.includes('"tool_name"')) return false;
+    if (text.startsWith("{") || text.startsWith("[")) return false;
     return true;
+  },
+
+  extractVoiceResponseText(value) {
+    const raw = String(value || "").trim();
+    if (!raw) return "";
+
+    try {
+      const parsed = JSON.parse(raw);
+      const toolText = parsed?.tool_args?.text;
+      if (typeof toolText === "string" && toolText.trim()) return toolText;
+    } catch (_error) {
+      // Streaming Agent Zero JSON is often incomplete until the final chunk.
+    }
+
+    const toolArgsIndex = raw.indexOf('"tool_args"');
+    const searchFrom = toolArgsIndex >= 0 ? raw.slice(toolArgsIndex) : raw;
+    const textMatch = searchFrom.match(/"text"\s*:\s*"((?:\\.|[^"\\])*)"?/s);
+    if (textMatch?.[1]) {
+      return this.decodeJsonStringFragment(textMatch[1]);
+    }
+
+    return raw;
+  },
+
+  decodeJsonStringFragment(value) {
+    const text = String(value || "");
+    try {
+      return JSON.parse(`"${text.replace(/\\?$/, "")}"`);
+    } catch (_error) {
+      return text
+        .replace(/\\"/g, '"')
+        .replace(/\\n/g, " ")
+        .replace(/\\r/g, " ")
+        .replace(/\\t/g, " ")
+        .replace(/\\\\/g, "\\");
+    }
   },
 
   extractSpeakableText(value, finished = false) {

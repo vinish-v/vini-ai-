@@ -30,8 +30,8 @@ PLUGIN_NAME = "_whisper_stt"
 PARAKEET_MODEL_DIR = "usr/models/parakeet-tdt-0.6b-v3-int8"
 PARAKEET_MODEL_NAME = "nemo-parakeet-tdt-0.6b-v3"
 DEFAULT_CONFIG = {
-    "engine": "parakeet",
-    "model_size": "base",
+    "engine": "whisper",
+    "model_size": "tiny",
     "language": "en",
     "message_mode": "send",
     "silence_threshold": 0.3,
