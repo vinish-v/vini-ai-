@@ -12,6 +12,8 @@ class Status(ApiHandler):
         whisper_package_error = ""
         faster_whisper_package_version = ""
         faster_whisper_package_error = ""
+        moonshine_package_version = ""
+        moonshine_package_error = ""
         onnx_asr_package_version = ""
         onnx_asr_package_error = ""
         try:
@@ -22,6 +24,10 @@ class Status(ApiHandler):
             faster_whisper_package_version = importlib.metadata.version("faster-whisper")
         except Exception as e:
             faster_whisper_package_error = str(e)
+        try:
+            moonshine_package_version = importlib.metadata.version("moonshine-voice")
+        except Exception as e:
+            moonshine_package_error = str(e)
         try:
             onnx_asr_package_version = importlib.metadata.version("onnx-asr")
         except Exception as e:
@@ -37,15 +43,18 @@ class Status(ApiHandler):
                 "loaded_engine": runtime.get_loaded_engine(),
                 "loaded_model": runtime.get_loaded_model_name(),
                 "parakeet": runtime.get_parakeet_status(),
+                "moonshine": runtime.get_moonshine_status(),
                 "faster_whisper": runtime.get_faster_whisper_status(),
             },
             "package": {
-                "version": faster_whisper_package_version or whisper_package_version,
-                "error": faster_whisper_package_error or whisper_package_error,
+                "version": moonshine_package_version or faster_whisper_package_version or whisper_package_version,
+                "error": moonshine_package_error or faster_whisper_package_error or whisper_package_error,
                 "whisper_version": whisper_package_version,
                 "whisper_error": whisper_package_error,
                 "faster_whisper_version": faster_whisper_package_version,
                 "faster_whisper_error": faster_whisper_package_error,
+                "moonshine_version": moonshine_package_version,
+                "moonshine_error": moonshine_package_error,
                 "onnx_asr_version": onnx_asr_package_version,
                 "onnx_asr_error": onnx_asr_package_error,
             },
