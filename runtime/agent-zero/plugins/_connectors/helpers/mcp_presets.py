@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 from copy import deepcopy
 from shutil import which
@@ -22,7 +23,7 @@ PRESETS: dict[str, dict[str, Any]] = {
         "config": {
             "type": "stdio",
             "command": "uvx",
-            "args": ["workspace-mcp", "--tools", "gmail", "drive", "calendar", "--tool-tier", "core"],
+            "args": ["workspace-mcp", "--tools", "gmail", "drive", "calendar", "--tool-tier", "complete"],
             "env": {
                 "OAUTHLIB_INSECURE_TRANSPORT": "1",
                 "WORKSPACE_MCP_CREDENTIALS_DIR": "/a0/usr/google_workspace_mcp/credentials",
@@ -61,6 +62,12 @@ PRESET_ALIASES = {
     "gmail": "google-workspace",
     "google-drive": "google-workspace",
     "google-calendar": "google-workspace",
+}
+
+GOOGLE_WORKSPACE_AUTH_SERVICE = {
+    "gmail": "gmail",
+    "google-drive": "drive",
+    "google-calendar": "calendar",
 }
 
 
@@ -219,8 +226,84 @@ def refresh(connector_id: str | None = None) -> dict[str, Any]:
     return {"ok": True, "mcp_status": _runtime_status(), **registry.status()}
 
 
+async def start_auth(connector_id: str, user_google_email: str) -> dict[str, Any]:
+    manifest = registry.get_connector(connector_id)
+    preset_id = _preset_id_for(connector_id)
+    if not manifest or preset_id != "google-workspace":
+        return {
+            "ok": False,
+            "status": "unsupported_action",
+            "message": f"Connector '{connector_id}' is not a Google Workspace MCP connector.",
+            "no_changes_made": True,
+        }
+
+    email = str(user_google_email or "").strip()
+    if not email or "@" not in email:
+        return {
+            "ok": False,
+            "status": "missing_configuration",
+            "label": "Google email required",
+            "message": "Enter the Google account email to start the OAuth consent flow.",
+            "connector": registry.status(manifest.id).get("connector"),
+            "no_changes_made": True,
+        }
+
+    preset = PRESETS["google-workspace"]
+    missing = _missing_commands(preset)
+    missing_env = _missing_env(preset)
+    if missing or missing_env:
+        return enable(connector_id, force=True)
+
+    current = registry.status(manifest.id).get("connector") or {}
+    tool_names = {
+        str(tool.get("name") or "")
+        for tool in current.get("details", {}).get("mcp_tools", [])
+        if isinstance(tool, dict)
+    }
+    if "google_workspace.start_google_auth" not in tool_names:
+        enable_result = enable(connector_id, force=True)
+        if not enable_result.get("ok"):
+            return enable_result
+
+    service_name = GOOGLE_WORKSPACE_AUTH_SERVICE.get(manifest.id, "gmail")
+    action_result = await registry.run_action_async(
+        "read",
+        manifest.id,
+        {
+            "tool_name": "start_google_auth",
+            "args": {
+                "service_name": service_name,
+                "user_google_email": email,
+            },
+        },
+        confirmed=True,
+    )
+    message = str(action_result.get("data") or action_result.get("message") or "")
+    auth_url = _extract_google_auth_url(message)
+    connector = registry.status(manifest.id).get("connector")
+    return {
+        "ok": bool(action_result.get("ok") or auth_url),
+        "status": "oauth_started" if auth_url else action_result.get("status", "request_failed"),
+        "label": "OAuth sign-in opened" if auth_url else action_result.get("label", "OAuth sign-in failed"),
+        "message": (
+            "Google authorization URL is ready. Complete sign-in in Chrome or Edge, then refresh this connector."
+            if auth_url
+            else message or "Google Workspace MCP did not return an authorization URL."
+        ),
+        "connector": connector,
+        "auth_url": auth_url,
+        "mcp_result": action_result,
+        "no_changes_made": True,
+    }
+
+
 def _missing_commands(preset: dict[str, Any]) -> list[str]:
     return [command for command in preset.get("required_commands", []) if not which(command)]
+
+
+def _extract_google_auth_url(text: str) -> str:
+    match = re.search(r"https://accounts\.google\.com/[^\s)>\"]+", text or "")
+    return match.group(0).rstrip(".,") if match else ""
 
 
 def _missing_env(preset: dict[str, Any]) -> list[str]:
@@ -306,11 +389,18 @@ def _mcp_servers_object(config: dict[str, Any]) -> dict[str, Any]:
 
 def _apply_mcp_config(config: dict[str, Any]) -> None:
     config_text = json.dumps(config, indent=2)
-    settings.set_settings_delta({"mcp_servers": "[]"})
-    settings.set_settings_delta({"mcp_servers": config_text})
+    _set_mcp_servers("[]")
+    _set_mcp_servers(config_text)
     time.sleep(1)
     if not MCPConfig.get_instance().is_initialized():
         MCPConfig.update(config_text)
+
+
+def _set_mcp_servers(value: str) -> None:
+    try:
+        settings.set_settings_delta({"mcp_servers": value})
+    except UnboundLocalError:
+        settings.set_settings_delta({"mcp_servers": value}, apply=False)
 
 
 def _runtime_status() -> list[dict[str, Any]]:
