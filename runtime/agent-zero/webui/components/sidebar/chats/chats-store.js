@@ -14,6 +14,14 @@ import { store as tasksStore } from "/components/sidebar/tasks/tasks-store.js";
 import { store as syncStore } from "/components/sync/sync-store.js";
 import { store as chatInputStore } from "/components/chat/input/input-store.js";
 
+function openAgentWorkspace() {
+  try {
+    globalThis.Alpine?.store?.("viniWorkspace")?.openAgent?.();
+  } catch (error) {
+    console.warn("Could not switch back to task chat workspace.", error);
+  }
+}
+
 const model = {
   contexts: [],
   selected: "",
@@ -83,8 +91,12 @@ const model = {
 
   // Select a chat
   async selectChat(id) {
+    openAgentWorkspace();
     const currentContext = getContext();
-    if (id === currentContext) return; // already selected
+    if (id === currentContext) {
+      this.setSelected(id);
+      return;
+    } // already selected
 
     // Proceed with context selection
     setContext(id);
@@ -192,6 +204,7 @@ const model = {
   },
 
   deselectChat(){
+    openAgentWorkspace();
     globalThis.deselectChat(); //TODO move here
   },
 
@@ -213,6 +226,7 @@ const model = {
       } else {
         // Set context to first loaded chat
         if (response.ctxids?.[0]) {
+          openAgentWorkspace();
           setContext(response.ctxids[0]);
         }
         toast("Chats loaded.", "success");
