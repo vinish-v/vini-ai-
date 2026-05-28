@@ -20,6 +20,7 @@
     <link rel="stylesheet" href="css/buttons.css">
     <link rel="stylesheet" href="css/tables.css">
     <link rel="stylesheet" href="components/canvas/right-canvas.css">
+    <link rel="stylesheet" href="/plugins/_vini_canvas/webui/canvas-workspace.css?v=canvas-shell-4">
 
     <!-- Flatpickr for datetime picker -->
     <link rel="stylesheet" href="vendor/flatpickr/flatpickr.min.css">
@@ -92,7 +93,7 @@
         <!-- Right Panel (Message History and Input Section) -->
         <div id="right-panel" class="panel" >
 
-            <div id="vini-agent-workspace" x-data x-show="!$store.viniWorkspace || $store.viniWorkspace.isAgent()">
+            <div id="vini-agent-workspace" x-data x-show="!$store.viniWorkspace || $store.viniWorkspace.isAgent()" x-cloak>
                 <!-- top section with time, status etc. -->
                 <x-component path="chat/top-section/chat-top.html"></x-component>
 
@@ -126,8 +127,14 @@
                 </div>
             </div>
 
-            <div id="vini-canvas-workspace-host" x-data x-show="$store.viniWorkspace && $store.viniWorkspace.isCanvas()" x-cloak>
-                <x-component path="/plugins/_vini_canvas/webui/canvas-workspace.html?v=dyad-renderer-2"></x-component>
+            <div
+              id="vini-canvas-workspace-host"
+              x-data
+              x-show="$store.viniWorkspace && $store.viniWorkspace.isCanvas()"
+              x-effect="document.body.classList.toggle('vini-canvas-active', !!($store.viniWorkspace && $store.viniWorkspace.isCanvas()))"
+              x-cloak
+            >
+                <x-component path="/plugins/_vini_canvas/webui/canvas-workspace.html?v=canvas-shell-4"></x-component>
             </div>
 
             <!-- NEW: Toast Stack Component -->

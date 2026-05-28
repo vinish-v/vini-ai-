@@ -1,28 +1,17 @@
-<html>
-<head>
-  <link rel="stylesheet" href="/plugins/_vini_canvas/webui/canvas-workspace.css">
-  <script type="module">
-    import { store as workspaceStore } from "/components/workspace/workspace-store.js";
-    import { store as builderStore } from "/plugins/_vini_app_builder/webui/builder-store.js";
-  </script>
-</head>
-<body>
-  <main class="vini-canvas-frame-shell" x-data>
-    <button
-      type="button"
-      class="vini-canvas-back-button"
-      title="Back to task chat"
-      aria-label="Back to task chat"
-      @click="$store.viniWorkspace.openAgent()"
-    >
-      <span class="material-symbols-outlined" aria-hidden="true">arrow_back</span>
-      <span>Task Chat</span>
-    </button>
-    <iframe
-      class="vini-canvas-dyad-frame"
-      title="Vini Canvas"
-      src="/plugins/_vini_canvas/webui/dyad-renderer/index.html?v=dyad-renderer-2"
-    ></iframe>
-  </main>
-</body>
-</html>
+<main class="vini-canvas-frame-shell" x-data>
+  <button
+    type="button"
+    class="vini-canvas-back-button"
+    title="Back to task chat"
+    aria-label="Back to task chat"
+    @click="$store.viniWorkspace.openAgent()"
+  >
+    <span class="material-symbols-outlined" aria-hidden="true">arrow_back</span>
+    <span>Task Chat</span>
+  </button>
+  <iframe
+    class="vini-canvas-dyad-frame"
+    title="Vini Canvas"
+    src="/plugins/_vini_canvas/webui/dyad-renderer/index.html?v=dyad-renderer-2"
+  ></iframe>
+</main>
