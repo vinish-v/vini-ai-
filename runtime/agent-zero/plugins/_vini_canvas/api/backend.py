@@ -411,6 +411,7 @@ async def _generate_files_with_vini_model(
     prompt: str,
     design_context: dict[str, Any],
     design_brief: dict[str, Any],
+    quality_feedback: dict[str, Any] | None = None,
 ) -> tuple[list[dict[str, str]], dict[str, Any], str]:
     cfg, error = _provider_status()
     if error:
@@ -444,6 +445,12 @@ Rules:
 - Follow the Vini Design Director brief and selected Open Design catalog guidance.
 - Prefer polished, domain-specific UI over generic starter/proof cards.
 - Build rich, publish-ready experiences when requested: strong section rhythm, domain-specific copy, responsive typography, purposeful motion, and polished interactions.
+- Match the visual ambition of Lovable/Bolt/Framer-class generated sites: art-directed first viewport, real visual material, varied section composition, and credible product/hospitality/brand copy.
+- Before writing files, choose one concrete creative concept and implement it consistently. Do not output a generic dark template, a repeated card grid, or oversized hero text without composition.
+- Marketing websites must include a real asset strategy: credible remote images with fallbacks, inline SVG/canvas/3D visuals, product mockups, or carefully built CSS art. Empty dark boxes and abstract panels are not acceptable.
+- Use at least three distinct section layouts. Examples: editorial split hero, horizontal proof band, timeline/schedule board, image-led story panel, comparison/pricing table, testimonial quote wall, map/contact/reservation form.
+- Typography must be bounded with clamp(), max-width, balanced line lengths, and mobile-specific sizes. Do not let H1 text dominate the viewport to the point the site feels broken.
+- Include real interactive states: form loading/success/error, hover/focus states, active navigation, reduced-motion fallback when motion is used.
 - Available frontend libraries include lucide-react, framer-motion, three, @react-three/fiber, and clsx. Use them when they materially improve the result; do not add unused dependencies.
 - For 3D scenes, keep them lightweight, visible, nonblank, responsive, and accessible. Provide a non-3D content fallback when appropriate.
 - Generated projects include a real local Express backend in server.mjs. Use it for working local APIs instead of pretending cloud integrations exist.
@@ -455,6 +462,13 @@ Rules:
 - Do not claim integrations, reservations, purchases, payments, auth, email delivery, or database writes work unless the generated app includes real working local behavior or a real configured external integration for them.
 - Avoid clipped hero text, generic builder placeholders, repetitive card grids, low-contrast copy, horizontal scroll, broken mobile nav, and oversized headings that only work on one viewport.
 - Do not write outside the project. Do not include node_modules, dist, lockfiles, or binary files."""
+    quality_feedback_block = ""
+    if quality_feedback:
+        quality_feedback_block = (
+            "\n\nDesign QA feedback from the previous real preview:\n"
+            + json.dumps(quality_feedback, indent=2)[:8000]
+            + "\n\nThis is a repair pass. Preserve working backend/API behavior, but rewrite layout/CSS/components as needed until the visual quality issues are fixed."
+        )
     user = f"""User request:
 {prompt}
 
@@ -466,6 +480,7 @@ Existing project files:
 
 Recent chat:
 {chr(10).join(history) or "(none)"}
+{quality_feedback_block}
 
 Return strict JSON now."""
 
@@ -628,6 +643,41 @@ try {
       }
 
       const bodyText = (document.body?.innerText || "").trim().replace(/\s+/g, " ");
+      const images = Array.from(document.images);
+      const svgCount = document.querySelectorAll("svg").length;
+      const canvasCount = document.querySelectorAll("canvas").length;
+      const videoCount = document.querySelectorAll("video").length;
+      const sectionCount = document.querySelectorAll("section, main > div, article").length;
+      const buttonsAndLinks = document.querySelectorAll("button, a[href]").length;
+      const firstViewportElements = visibleElements.filter((el) => {
+        const box = el.getBoundingClientRect();
+        return box.top < window.innerHeight && box.bottom > 0;
+      });
+      const firstViewportText = firstViewportElements
+        .map((el) => (el.innerText || el.textContent || "").trim())
+        .filter(Boolean)
+        .join(" ")
+        .replace(/\s+/g, " ")
+        .slice(0, 1200);
+      const headingData = Array.from(document.querySelectorAll("h1, h2"))
+        .map((el) => {
+          const style = window.getComputedStyle(el);
+          const box = el.getBoundingClientRect();
+          return {
+            tag: el.tagName.toLowerCase(),
+            text: (el.innerText || el.textContent || "").trim().replace(/\s+/g, " ").slice(0, 140),
+            fontSize: Number.parseFloat(style.fontSize || "0"),
+            width: Math.round(box.width),
+            height: Math.round(box.height),
+          };
+        })
+        .slice(0, 12);
+      const largeEmptyPanels = visibleElements.filter((el) => {
+        const box = el.getBoundingClientRect();
+        const text = (el.innerText || el.textContent || "").trim();
+        const hasMedia = el.querySelector("img, video, canvas, svg");
+        return box.width > window.innerWidth * 0.28 && box.height > 180 && !text && !hasMedia;
+      }).length;
       return {
         title: document.title,
         bodyTextLength: bodyText.length,
@@ -640,6 +690,16 @@ try {
         overlaps: overlaps.slice(0, 12),
         oversizedText: oversizedText.slice(0, 12),
         brokenImages,
+        imageCount: images.length,
+        svgCount,
+        canvasCount,
+        videoCount,
+        sectionCount,
+        buttonsAndLinks,
+        firstViewportTextLength: firstViewportText.length,
+        firstViewportTextSample: firstViewportText,
+        headingData,
+        largeEmptyPanels,
       };
     });
 
@@ -809,6 +869,184 @@ fs.writeFileSync(config.resultPath, JSON.stringify(result, null, 2));
     return payload
 
 
+def _design_quality_static_checks(
+    *,
+    prompt: str,
+    text_for_checks: str,
+    source_context: str,
+    design_brief: dict[str, Any],
+    playwright_result: dict[str, Any],
+) -> list[dict[str, Any]]:
+    domain = str(design_brief.get("domain") or "").lower()
+    prompt_l = prompt.lower()
+    visual_domain = domain in {"restaurant", "cafe", "fitness", "portfolio", "ecommerce", "landing"} or any(
+        token in prompt_l
+        for token in [
+            "website",
+            "landing",
+            "restaurant",
+            "cafe",
+            "gym",
+            "fitness",
+            "portfolio",
+            "shop",
+            "brand",
+            "rich",
+            "premium",
+        ]
+    )
+
+    checks: list[dict[str, Any]] = []
+    source = source_context.lower()
+    text = text_for_checks.lower()
+
+    asset_signals = {
+        "img": source.count("<img") + source.count("background-image: url") + source.count("backgroundimage"),
+        "remote_image": source.count("images.unsplash") + source.count("images.pexels") + source.count("cdn.") + source.count("cloudinary"),
+        "svg": source.count("<svg") + source.count("lucide-react"),
+        "canvas_or_3d": source.count("<canvas") + source.count("three") + source.count("@react-three") + source.count("webgl"),
+        "motion": source.count("framer-motion") + source.count("motion.") + source.count("@keyframes") + source.count("transition:"),
+        "shape_art": source.count("clip-path") + source.count("mask-image") + source.count("mix-blend-mode"),
+    }
+    asset_score = (
+        asset_signals["img"] * 3
+        + asset_signals["remote_image"] * 2
+        + asset_signals["svg"]
+        + asset_signals["canvas_or_3d"] * 2
+        + min(asset_signals["motion"], 3)
+        + asset_signals["shape_art"]
+    )
+    checks.append(
+        {
+            "name": "design:real-asset-strategy",
+            "ok": (not visual_domain) or asset_score >= 3,
+            "detail": {"asset_score": asset_score, "signals": asset_signals, "visual_domain": visual_domain},
+        }
+    )
+
+    layout_signals = {
+        "sections": source.count("<section"),
+        "figure": source.count("<figure"),
+        "form": source.count("<form"),
+        "table_or_schedule": source.count("<table") + source.count("schedule") + source.count("timeline"),
+        "split_layout": source.count("grid-template-columns") + source.count("grid-template-areas") + source.count("split"),
+        "sticky_or_layered": source.count("position: sticky") + source.count("position: absolute") + source.count("z-index"),
+        "motion": source.count("framer-motion") + source.count("motion."),
+        "media": source.count("<img") + source.count("<video") + source.count("<canvas") + source.count("<svg"),
+    }
+    layout_variety = sum(1 for value in layout_signals.values() if value > 0)
+    checks.append(
+        {
+            "name": "design:varied-section-composition",
+            "ok": (not visual_domain) or layout_variety >= 5,
+            "detail": {"layout_variety": layout_variety, "signals": layout_signals},
+        }
+    )
+
+    card_count = source.count("card")
+    section_count = max(1, source.count("<section"))
+    card_heavy = card_count > 14 and layout_variety < 6 and card_count / section_count > 2.2
+    checks.append(
+        {
+            "name": "design:not-card-grid-template",
+            "ok": not card_heavy,
+            "detail": {"card_count": card_count, "section_count": section_count, "layout_variety": layout_variety},
+        }
+    )
+
+    weak_copy_markers = [
+        "lorem ipsum",
+        "your amazing project",
+        "production-ready website built by",
+        "generated from intent",
+        "live preview",
+        "exportable code",
+        "feature one",
+        "feature two",
+        "feature three",
+    ]
+    weak_copy = [marker for marker in weak_copy_markers if marker in text or marker in source]
+    checks.append({"name": "design:no-generic-builder-copy", "ok": not weak_copy, "detail": weak_copy})
+
+    pages = playwright_result.get("pages") if isinstance(playwright_result.get("pages"), list) else []
+    desktop = next((page for page in pages if (page.get("viewport") or {}).get("name") == "desktop"), None)
+    mobile = next((page for page in pages if (page.get("viewport") or {}).get("name") == "mobile"), None)
+    for label, page in [("desktop", desktop), ("mobile", mobile)]:
+        if not isinstance(page, dict):
+            continue
+        metrics = page.get("metrics") or {}
+        headings = metrics.get("headingData") or []
+        h1 = next((item for item in headings if item.get("tag") == "h1"), {})
+        h1_font = float(h1.get("fontSize") or 0)
+        first_viewport_text_length = int(metrics.get("firstViewportTextLength") or 0)
+        media_count = int(metrics.get("imageCount") or 0) + int(metrics.get("svgCount") or 0) + int(metrics.get("canvasCount") or 0) + int(metrics.get("videoCount") or 0)
+        large_empty_panels = int(metrics.get("largeEmptyPanels") or 0)
+        if label == "desktop":
+            checks.append(
+                {
+                    "name": "design:desktop-hero-type-scale",
+                    "ok": h1_font == 0 or h1_font <= 96,
+                    "detail": {"h1_font_size": h1_font, "h1": h1},
+                }
+            )
+            checks.append(
+                {
+                    "name": "design:desktop-first-viewport-richness",
+                    "ok": (not visual_domain) or (first_viewport_text_length >= 180 and media_count >= 1 and large_empty_panels <= 2),
+                    "detail": {
+                        "first_viewport_text_length": first_viewport_text_length,
+                        "media_count": media_count,
+                        "large_empty_panels": large_empty_panels,
+                    },
+                }
+            )
+        if label == "mobile":
+            checks.append(
+                {
+                    "name": "design:mobile-hero-type-scale",
+                    "ok": h1_font == 0 or h1_font <= 64,
+                    "detail": {"h1_font_size": h1_font, "h1": h1},
+                }
+            )
+
+    return checks
+
+
+def _compact_visual_qa_feedback(visual_qa: dict[str, Any]) -> dict[str, Any]:
+    failed_checks = [
+        {"name": check.get("name"), "detail": check.get("detail")}
+        for check in visual_qa.get("checks", [])
+        if isinstance(check, dict) and not check.get("ok")
+    ]
+    pages = []
+    playwright = visual_qa.get("playwright") if isinstance(visual_qa.get("playwright"), dict) else {}
+    for page in playwright.get("pages") or []:
+        if not isinstance(page, dict):
+            continue
+        metrics = page.get("metrics") or {}
+        pages.append(
+            {
+                "viewport": page.get("viewport"),
+                "title": metrics.get("title"),
+                "bodyTextSample": metrics.get("bodyTextSample"),
+                "firstViewportTextSample": metrics.get("firstViewportTextSample"),
+                "headingData": metrics.get("headingData"),
+                "imageCount": metrics.get("imageCount"),
+                "svgCount": metrics.get("svgCount"),
+                "canvasCount": metrics.get("canvasCount"),
+                "largeEmptyPanels": metrics.get("largeEmptyPanels"),
+                "hasHorizontalScroll": metrics.get("hasHorizontalScroll"),
+                "clipped": metrics.get("clipped"),
+                "overlaps": metrics.get("overlaps"),
+            }
+        )
+    return {
+        "failed_checks": failed_checks[:16],
+        "pages": pages[:2],
+        "instruction": "Repair the visual design until these checks pass. Preserve real backend behavior and requested content.",
+    }
+
+
 def _run_visual_qa(
     *,
     app: dict[str, Any],
@@ -925,6 +1163,15 @@ def _run_visual_qa(
                 }
             )
 
+    for check in _design_quality_static_checks(
+        prompt=prompt,
+        text_for_checks=text_for_checks,
+        source_context=source_context,
+        design_brief=design_brief,
+        playwright_result=playwright_result,
+    ):
+        checks.append(check)
+
     qa["ok"] = all(bool(check.get("ok")) for check in checks)
     qa["finished_at"] = _now()
     manifest = builder._load_manifest(project_id)
@@ -950,6 +1197,7 @@ def _dyad_write_message(
     design_context: dict[str, Any] | None = None,
     design_brief: dict[str, Any] | None = None,
     visual_qa: dict[str, Any] | None = None,
+    repair_attempt: dict[str, Any] | None = None,
 ) -> str:
     parts = [
         "<dyad-status>Planning design</dyad-status>",
@@ -1027,6 +1275,17 @@ def _dyad_write_message(
             parts.append("<dyad-status>Ready with proof</dyad-status>")
         else:
             parts.append("<dyad-status>Repairing design is required before this app should be treated as complete.</dyad-status>")
+    if repair_attempt:
+        parts.append("<dyad-status>Repairing design</dyad-status>")
+        if repair_attempt.get("ok"):
+            parts.append("<dyad-status>Automatic design repair completed and the quality gate passed.</dyad-status>")
+        else:
+            failed_checks = repair_attempt.get("post_repair_failed_checks") or repair_attempt.get("failed_checks") or []
+            parts.append(
+                "<dyad-status>Automatic design repair ran, but issues remain:\n"
+                + escape(json.dumps(failed_checks, indent=2)[:3000], quote=False)
+                + "\n</dyad-status>"
+            )
     return "\n\n".join(parts)
 
 
@@ -1124,6 +1383,72 @@ async def _generate_app_turn(state: dict[str, Any], data: dict[str, Any]) -> dic
         design_brief=design_brief,
         preview_result=preview_result,
     )
+    repair_attempt: dict[str, Any] | None = None
+    if build_result.get("ok") and preview_result and preview_result.get("ok") and visual_qa and not visual_qa.get("ok"):
+        repair_attempt = {
+            "attempted": True,
+            "ok": False,
+            "reason": "Visual/design QA failed after the first real preview.",
+            "failed_checks": [
+                str(check.get("name"))
+                for check in visual_qa.get("checks", [])
+                if isinstance(check, dict) and not check.get("ok")
+            ],
+        }
+        _save_project_metadata(str(app["project_id"]), {"quality_gate_status": "repairing_design"})
+        try:
+            repair_files, cfg, repair_summary = await _generate_files_with_vini_model(
+                app=app,
+                chat=chat,
+                prompt=prompt,
+                design_context=design_context,
+                design_brief=design_brief,
+                quality_feedback=_compact_visual_qa_feedback(visual_qa),
+            )
+            for file_info in repair_files:
+                write_result = builder.handle_action(
+                    {
+                        "action": "write",
+                        "project_id": app["project_id"],
+                        "path": file_info["path"],
+                        "content": file_info["content"],
+                    }
+                )
+                if not write_result.get("ok"):
+                    raise RuntimeError(write_result.get("error") or f"Failed to write {file_info['path']}")
+            generated_files = repair_files
+            summary = repair_summary or summary
+            build_result = builder.handle_action({"action": "build_all", "project_id": app["project_id"], "install": True})
+            preview_result = None
+            if build_result.get("ok"):
+                _stop_preview(str(app["project_id"]))
+                preview_result = builder.handle_action({"action": "preview", "project_id": app["project_id"], "verify": True})
+            visual_qa = _run_visual_qa(
+                app=app,
+                prompt=prompt,
+                design_brief=design_brief,
+                preview_result=preview_result,
+            )
+            repair_attempt.update(
+                {
+                    "ok": bool(visual_qa.get("ok")),
+                    "files": [item["path"] for item in repair_files],
+                    "post_repair_failed_checks": [
+                        str(check.get("name"))
+                        for check in visual_qa.get("checks", [])
+                        if isinstance(check, dict) and not check.get("ok")
+                    ],
+                }
+            )
+        except Exception as exc:
+            repair_attempt.update({"ok": False, "error": str(exc).strip() or exc.__class__.__name__})
+            _save_project_metadata(
+                str(app["project_id"]),
+                {
+                    "quality_gate_status": "repair_failed",
+                    "last_repair_error": str(exc).strip()[:2000] or exc.__class__.__name__,
+                },
+            )
 
     assistant_content = _dyad_write_message(
         summary=summary,
@@ -1133,6 +1458,7 @@ async def _generate_app_turn(state: dict[str, Any], data: dict[str, Any]) -> dic
         design_context=design_context,
         design_brief=design_brief,
         visual_qa=visual_qa,
+        repair_attempt=repair_attempt,
     )
     assistant_message = _append_message(state, chat, "assistant", assistant_content)
     assistant_message["model"] = f"{cfg.get('provider')}/{cfg.get('name')}"
@@ -1158,6 +1484,14 @@ async def _generate_app_turn(state: dict[str, Any], data: dict[str, Any]) -> dic
             if isinstance(check, dict) and not check.get("ok")
         ]
         warnings.append("Visual QA found issues: " + ", ".join(failed_checks))
+    if repair_attempt:
+        if repair_attempt.get("ok"):
+            warnings.append("Canvas performed one automatic design repair pass and the quality gate passed.")
+        else:
+            warnings.append(
+                "Canvas attempted one automatic design repair pass but issues remain: "
+                + ", ".join(repair_attempt.get("post_repair_failed_checks") or repair_attempt.get("failed_checks") or [])
+            )
 
     return {
         "ok": True,
@@ -1169,6 +1503,7 @@ async def _generate_app_turn(state: dict[str, Any], data: dict[str, Any]) -> dic
         "designContext": design_context,
         "designBrief": design_brief,
         "visualQa": visual_qa,
+        "repairAttempt": repair_attempt,
         "warningMessages": warnings,
     }
 

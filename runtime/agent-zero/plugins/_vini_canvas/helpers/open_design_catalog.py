@@ -43,6 +43,7 @@ VINI_NATIVE_SKILLS = [
 DOMAIN_KEYWORDS = {
     "restaurant": {"restaurant", "dining", "menu", "chef", "reservation", "table", "food", "wine"},
     "cafe": {"cafe", "coffee", "bakery", "espresso", "latte", "brunch", "pastry"},
+    "fitness": {"gym", "fitness", "training", "strength", "conditioning", "coach", "membership", "workout"},
     "saas": {"saas", "dashboard", "analytics", "subscription", "workspace", "team", "metrics"},
     "portfolio": {"portfolio", "resume", "cv", "profile", "case", "work", "personal"},
     "ecommerce": {"shop", "store", "product", "cart", "checkout", "ecommerce", "catalog"},
@@ -53,6 +54,7 @@ DOMAIN_KEYWORDS = {
 PREFERRED_SKILLS_BY_DOMAIN = {
     "restaurant": {"creative-director", "design-brief", "frontend-design", "web-design-guidelines", "canvas-design"},
     "cafe": {"creative-director", "design-brief", "frontend-design", "web-design-guidelines", "canvas-design"},
+    "fitness": {"creative-director", "frontend-design", "web-design-guidelines", "threejs", "gsap-react", "copywriting"},
     "saas": {"frontend-design", "frontend-dev", "shadcn-ui", "ui-ux-pro-max", "platform-design"},
     "portfolio": {"creative-director", "frontend-design", "web-design-guidelines", "brand-guidelines", "canvas-design"},
     "ecommerce": {"ad-creative", "frontend-design", "web-design-guidelines", "brand-guidelines", "copywriting"},
@@ -64,12 +66,80 @@ PREFERRED_SKILLS_BY_DOMAIN = {
 PREFERRED_DESIGNS_BY_DOMAIN = {
     "restaurant": {"cafe", "luxury", "warm-editorial", "editorial", "minimal"},
     "cafe": {"cafe", "warm-editorial", "airbnb", "bento", "minimal"},
+    "fitness": {"nike", "bmw-m", "premium", "framer", "dramatic", "energetic"},
     "saas": {"linear-app", "application", "airtable", "bento", "framer"},
     "portfolio": {"minimal", "editorial", "framer", "apple", "bento"},
     "ecommerce": {"airbnb", "bento", "apple", "luxury", "webflow"},
     "landing": {"framer", "webflow", "bento", "apple", "minimal"},
     "admin": {"application", "linear-app", "airtable", "ant", "bento"},
     "web-app": {"bento", "application", "framer", "apple", "minimal"},
+}
+
+DOMAIN_ART_DIRECTION = {
+    "restaurant": {
+        "concept": "hospitality editorial: food photography, room atmosphere, menu craft, booking confidence",
+        "layouts": ["full-bleed dining hero", "menu editorial spread", "chef/story split", "reservation panel"],
+        "asset_strategy": "Use real-looking food/interior imagery, art-directed crops, ingredient details, and warm tactile surfaces.",
+    },
+    "cafe": {
+        "concept": "neighborhood cafe warmth: tactile coffee craft, bakery rhythm, calm morning energy",
+        "layouts": ["photo-led hero", "menu board section", "seasonal specials strip", "visit/reserve block"],
+        "asset_strategy": "Use coffee, pastry, interior, and people-at-table imagery with credible alt text and fallbacks.",
+    },
+    "fitness": {
+        "concept": "premium performance brand: athletic editorial, equipment detail, coach credibility, measurable outcomes",
+        "layouts": ["kinetic hero", "membership comparison", "class schedule board", "coach cards with photo treatment", "trial form"],
+        "asset_strategy": "Use training-floor imagery, equipment closeups, coach portraits, motion accents, and high-contrast performance visuals.",
+    },
+    "saas": {
+        "concept": "credible product launch: product UI proof, workflow clarity, metrics, integrations, team adoption",
+        "layouts": ["product hero with interface visual", "feature walkthrough", "metric cards", "role-based use cases"],
+        "asset_strategy": "Create real dashboard mockups, charts, command palettes, and product screenshots in code instead of empty cards.",
+    },
+    "portfolio": {
+        "concept": "personal editorial portfolio: identity, work samples, case-study rhythm, contact clarity",
+        "layouts": ["identity hero", "case study grid", "timeline", "selected work deep cards"],
+        "asset_strategy": "Use project thumbnails, editorial typography, and visual work samples instead of generic resume cards.",
+    },
+    "ecommerce": {
+        "concept": "premium commerce: product desire, detail, trust, comparison, purchase path",
+        "layouts": ["product hero", "collection grid", "detail closeup", "trust band", "checkout CTA"],
+        "asset_strategy": "Use product imagery, texture panels, color swatches, and shopping interactions with real local cart behavior when asked.",
+    },
+    "landing": {
+        "concept": "high-converting launch page: memorable first viewport, proof, clear offer, action path",
+        "layouts": ["statement hero", "proof band", "feature story", "comparison", "signup CTA"],
+        "asset_strategy": "Use domain-specific visuals, product mockups, motion, or art-directed CSS composition; never leave decorative blanks.",
+    },
+    "admin": {
+        "concept": "dense operational tool: fast scanning, clear states, tables, filters, repeatable actions",
+        "layouts": ["workspace shell", "data table", "detail drawer", "status dashboard"],
+        "asset_strategy": "Use real UI density, charts, badges, filters, and empty/error/loading states instead of marketing decoration.",
+    },
+    "web-app": {
+        "concept": "product-grade web experience with a concrete visual metaphor and real interaction states",
+        "layouts": ["strong first viewport", "workflow sections", "proof areas", "action surface"],
+        "asset_strategy": "Choose visuals that make the requested domain inspectable, not abstract filler.",
+    },
+}
+
+UNIVERSAL_CREATIVE_BAR = {
+    "benchmark": "Aim for the visual ambition of Lovable/Bolt/Framer-class generated sites: rich first viewport, memorable art direction, credible copy, and interaction polish.",
+    "must_have": [
+        "A named creative concept, not only a color palette.",
+        "At least three distinct section layouts; do not repeat the same card pattern down the page.",
+        "A real visual asset strategy: images, product mockups, 3D/canvas, SVG compositions, or domain-specific generated CSS art.",
+        "Tight typography: bounded hero sizes, readable line lengths, clear hierarchy, no giant text blocks that dominate without composition.",
+        "Purposeful motion or micro-interactions when they improve the experience.",
+        "Every requested backend or form behavior must be real local behavior, not a cosmetic success message.",
+    ],
+    "anti_patterns": [
+        "Huge white heading on a dark gradient with generic cards.",
+        "Blank placeholder panels pretending to be images.",
+        "Uniform three-card rows used for every section.",
+        "Generic proof copy such as Generated from intent, Live preview, or Exportable code.",
+        "Landing pages that look like internal builder proof screens.",
+    ],
 }
 
 
@@ -245,22 +315,36 @@ def create_design_brief(prompt: str, context: dict[str, Any]) -> dict[str, Any]:
     domain = str(context.get("domain") or "web-app")
     skill_titles = [item["title"] for item in context.get("selected_open_design_skills", [])[:4]]
     system_titles = [item["title"] for item in context.get("selected_open_design_systems", [])[:3]]
+    art_direction = DOMAIN_ART_DIRECTION.get(domain, DOMAIN_ART_DIRECTION["web-app"])
     return {
         "source": "vini-design-director",
         "user_request": prompt,
         "domain": domain,
         "design_system_direction": system_titles,
         "skill_workflow": skill_titles,
+        "creative_bar": UNIVERSAL_CREATIVE_BAR,
+        "art_direction": art_direction,
+        "design_tokens_required": {
+            "typography": "Define a bounded type scale with clamp() and readable max line lengths.",
+            "spacing": "Use an intentional spacing scale and clear section rhythm.",
+            "color": "Use a domain-specific palette with contrast checks and one or two purposeful accents.",
+            "motion": "Use restrained motion for entry, hover, reveal, or state transitions when appropriate.",
+        },
         "brand_and_tone": f"Create a publish-ready {domain} experience with specific, non-generic copy and a clear product identity.",
         "layout_plan": [
             "First viewport must communicate the product/place/app immediately.",
+            "Use at least three meaningfully different section compositions, not repeated card grids.",
             "Use clear section hierarchy with responsive spacing and no nested decorative cards.",
             "Include every section explicitly requested by the user before optional content.",
+            *art_direction.get("layouts", []),
         ],
         "visual_rules": [
             "Avoid clipped hero text, overlapping sticky navigation, unreadable contrast, and horizontal scrolling.",
             "Use a restrained palette with strong contrast and purposeful accent color.",
             "Prefer real UI structure and domain-specific copy over placeholder proof cards.",
+            "Use real visual material: credible images, SVG/Canvas/3D compositions, product mockups, or domain-specific CSS art. Do not use empty decorative boxes.",
+            "Do not accept a page whose first viewport is just oversized text plus cards.",
+            art_direction.get("asset_strategy", ""),
         ],
         "responsive_rules": [
             "Desktop and mobile layouts must both be readable without text overlap.",
@@ -272,6 +356,7 @@ def create_design_brief(prompt: str, context: dict[str, Any]) -> dict[str, Any]:
             "Preview must return HTTP success.",
             "Generated page must contain user-requested domain content.",
             "Visual QA must not find blank, clipped, overlapped, or placeholder-heavy output.",
+            "Design QA must pass: strong first viewport, real asset strategy, varied section layouts, no generic card-grid-only page, and no weak placeholder visuals.",
         ],
     }
 
