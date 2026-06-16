@@ -53,6 +53,9 @@ export type RecentEntry = {
   path: string;
   kind: "file" | "directory";
   modifiedAt: string;
+  contextId?: string;
+  contextName?: string;
+  openUrl?: string;
 };
 
 export type RuntimePaths = {

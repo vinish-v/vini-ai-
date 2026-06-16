@@ -583,6 +583,7 @@ globalThis.newContext = newContext;
 export const setContext = function (id) {
   if (id == context) return;
   context = id;
+  syncContextUrl(id);
   // Always reset the log tracking variables when switching contexts
   // This ensures we get fresh data from the backend
   lastLogGuid = "";
@@ -641,6 +642,20 @@ export const getContext = function () {
 };
 globalThis.getContext = getContext;
 globalThis.setContext = setContext;
+
+function syncContextUrl(id) {
+  try {
+    const url = new URL(window.location.href);
+    if (id) {
+      url.searchParams.set("ctxid", id);
+    } else {
+      url.searchParams.delete("ctxid");
+    }
+    window.history.replaceState({}, "", url);
+  } catch (_error) {
+    // URL synchronization is convenience only; context switching should still work.
+  }
+}
 
 export const getChatBasedId = function (id) {
   return context + "-" + globalThis.resetCounter + "-" + id;

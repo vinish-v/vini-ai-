@@ -140,6 +140,14 @@ function App() {
     }
   };
 
+  const openRecentEntry = async (entry: RuntimeStatus["recentEntries"][number]) => {
+    if (!entry.contextId) {
+      setMessage("This recent item is not a saved chat or task session yet.");
+      return;
+    }
+    await runAction("refresh", () => window.vini.runtime.openContext(entry.contextId!));
+  };
+
   const primaryTone = useMemo(() => {
     if (!status) {
       return "neutral";
@@ -302,13 +310,25 @@ function App() {
             </div>
             <div className="activity-list">
               {status?.recentEntries.length ? (
-                status.recentEntries.map((entry) => (
-                  <div className="activity-row" key={entry.path}>
-                    <span>{entry.kind}</span>
-                    <strong title={entry.path}>{entry.name}</strong>
-                    <time>{formatDate(entry.modifiedAt)}</time>
-                  </div>
-                ))
+                status.recentEntries.map((entry) => {
+                  const rowContent = (
+                    <>
+                      <span>{entry.contextId ? "session" : entry.kind}</span>
+                      <strong title={entry.path}>{entry.contextName || entry.name}</strong>
+                      <time>{formatDate(entry.modifiedAt)}</time>
+                    </>
+                  );
+
+                  return entry.contextId ? (
+                    <button className="activity-row activity-button" key={entry.path} onClick={() => void openRecentEntry(entry)} title={`Open ${entry.contextName || entry.name}`}>
+                      {rowContent}
+                    </button>
+                  ) : (
+                    <div className="activity-row" key={entry.path}>
+                      {rowContent}
+                    </div>
+                  );
+                })
               ) : (
                 <p className="empty-state">No Vini AI runtime user files have been created in the data mount yet.</p>
               )}

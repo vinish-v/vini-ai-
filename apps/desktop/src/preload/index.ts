@@ -9,6 +9,7 @@ const api = {
     restart: (): Promise<RuntimeActionResult> => ipcRenderer.invoke("runtime:restart"),
     logs: (): Promise<RuntimeLogResult> => ipcRenderer.invoke("runtime:logs"),
     open: (): Promise<void> => ipcRenderer.invoke("runtime:open"),
+    openContext: (contextId: string): Promise<void> => ipcRenderer.invoke("runtime:openContext", contextId),
     openDataDir: (): Promise<void> => ipcRenderer.invoke("runtime:openDataDir"),
     openRuntimeDir: (): Promise<void> => ipcRenderer.invoke("runtime:openRuntimeDir")
   },
